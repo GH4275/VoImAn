@@ -210,10 +210,7 @@ def volspike(pars):
         plt.subplot(133);plt.imshow(notbw);plt.axis('image');plt.xlabel('background')
         fig.suptitle('ROI selection')
         plt.show()
-    
-    # flip the signal if necessary
-    if args['flip_signal']==True:
-        data = -data
+
     
     # remove the photobleaching effect by high-pass filtering the signal
     output['mean_im'] = np.mean(data, axis=0)
@@ -331,7 +328,7 @@ def volspike(pars):
         t = np.double(t * np.mean(t0[spikes]) / np.mean(t[spikes]))
 
         # estimate spike times
-        ts, spikes, t_rec, templates, low_spikes, thresh = denoise_spikes(t, 
+        ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t,
                     window_length, fr,  hp_freq=args['hp_freq'], clip=args['clip'],
                     threshold_method=args['threshold_method'], pnorm=args['pnorm'], 
                     threshold=args['threshold'], min_spikes=args['min_spikes'], do_plot=do_plot)
@@ -389,7 +386,8 @@ def volspike(pars):
     output['F0'] = np.abs(np.nanmean(data_lp[:, bw.flatten()] + output['mean_im'][bw][np.newaxis, :], 1))
     output['dFF'] = t / output['F0']
     output['rawROI']['dFF'] = output['rawROI']['t'] / output['F0']
-    
+    output['polarity'] = polarity
+
     return output
 
 
@@ -456,6 +454,18 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
     # high-pass filter the signal for spike detection
     data = signal_filter(data, hp_freq, fr, order=5)
     data = data - np.median(data)
+
+    # # Identify spike polarity of data by finding the number of spikes in positive and negative direction.
+    polarity_thresh = 3*np.std(data)
+    locsn = signal.find_peaks(-data, height=polarity_thresh, distance=int(fr / 100))[0]
+    locsp = signal.find_peaks(data, height=polarity_thresh, distance=int(fr / 100))[0]
+
+    if locsn.size > locsp.size:
+        data = -data
+        polarity = 'negative'
+    else:
+        polarity = 'positive'
+
     pks = data[signal.find_peaks(data, height=None)[0]]
 
     # first round of spike detection    
@@ -532,7 +542,7 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
                  linestyle='none')
         plt.show()
 
-    return datafilt, spikes, t_rec, templates, low_spikes, thresh2_normalized
+    return datafilt, spikes, t_rec, templates, low_spikes, thresh2_normalized, polarity
 
 def adaptive_thresh(pks, clip, pnorm=0.5, min_spikes=10):
     """ Adaptive threshold method for deciding threshold given heights of all peaks.
