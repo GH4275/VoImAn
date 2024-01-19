@@ -40,7 +40,7 @@ import warnings
 # Flip to normal import if this is ever resolved: https://github.com/constantinpape/z5/issues/146
 # import z5py
 from zipfile import ZipFile
-
+from .dcimgpy import Dcimg
 import caiman as cm
 
 from . import timeseries
@@ -1531,6 +1531,20 @@ def load(file_name: Union[str, List[str]],
                     input_arr = input_arr[:, subindices[1]]
                 if len(subindices) > 2:
                     input_arr = input_arr[:, :, subindices[2]]
+        elif extension == '.dcimg':
+            dcimgfile = Dcimg()
+            if dcimgfile.open(file_name):
+                input_arr = np.zeros((len(dcimgfile), dcimgfile.getImageHeight(), dcimgfile.getImageWidth()),
+                                     dtype=np.int16)
+                for i in range(0, len(dcimgfile)):
+                    input_arr[i] = dcimgfile.getImageData(i)
+
+                dcimgfile.close()
+                input_arr = input_arr[subindices]
+                input_arr = np.squeeze(input_arr)
+
+            else:
+                print("ERROR:", filepath, "is not a valid DCIMG file.")
 
         elif extension == '.npy': # load npy file
             if fr is None:

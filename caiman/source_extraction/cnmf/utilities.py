@@ -31,6 +31,7 @@ import scipy
 from scipy.sparse import spdiags, issparse, csc_matrix, csr_matrix
 import scipy.ndimage as ndi
 import tifffile
+from caiman.base.dcimgpy import Dcimg
 from typing import List
 # https://github.com/constantinpape/z5/issues/146
 #import z5py
@@ -1158,6 +1159,16 @@ def get_file_size(file_name, var_name_hdf5='mov'):
                     T = len(tffl.pages)
                 else:
                     T, dims = siz[0], siz[1:]
+            elif extension == '.dcimg':
+                dcimgfile = Dcimg()
+                dims = [0, 0]
+                if dcimgfile.open(file_name):
+                    T = dcimgfile.getTotalFrames()
+                    dims[1] = dcimgfile.getImageWidth()
+                    dims[0] = dcimgfile.getImageHeight()
+                    dcimgfile.close()
+                else:
+                    print("ERROR:", filepath, "is not a valid DCIMG file.")
             elif extension in ('.avi', '.mkv'):
                 if 'CAIMAN_LOAD_AVI_FORCE_FALLBACK' in os.environ:
                         pims_movie = pims.PyAVReaderTimed(file_name) # duplicated code, but no cleaner way
