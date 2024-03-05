@@ -239,7 +239,7 @@ def volspike(pars):
     t0 = np.double(t0 - np.matmul(Ub, reg.coef_))
     
     # spike detection for the initial trace
-    ts, spikes, t_rec, templates, low_spikes, thresh = denoise_spikes(t0, 
+    ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t0,
                                           window_length, fr, hp_freq=args['hp_freq'], clip=args['clip'],
                                           threshold_method=args['threshold_method'], 
                                           pnorm=args['pnorm'], threshold=args['threshold'], 

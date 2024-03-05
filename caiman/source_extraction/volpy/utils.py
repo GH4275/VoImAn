@@ -144,7 +144,7 @@ def mrcnn_inference(img, size_range, weights_path, display_result=True):
         visualize.display_instances(img, r['rois'], r['masks'], r['class_ids'], 
                                 ['BG', 'neurons'], r['scores'], ax=ax,
                                 title="Predictions")        
-    return ROIs
+    return ROIs, r
 
 def reconstructed_movie(estimates, fnames, idx, scope, flip_signal):
     """ Create reconstructed movie in VolPy. The movie has three panels: 
@@ -239,10 +239,12 @@ def view_components(estimates, img, idx, frame_times=None, gt_times=None):
         if i < n:
             
             ax1.cla()
-            imgtmp = estimates['weights'][idx][i]
+            imgobj = estimates['weights'][idx][i]
+            imgtmp = np.asfarray(imgobj)
             ax1.imshow(imgtmp, interpolation='None', cmap=plt.cm.gray, vmax=np.max(imgtmp)*0.5, vmin=0)
             ax1.set_title(f'Spatial component {i+1}')
             ax1.axis('off')
+
             
             ax2.cla()
             ax2.plot(frame_times, estimates['t'][idx][i], alpha=0.8)

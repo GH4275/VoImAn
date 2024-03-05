@@ -1169,6 +1169,14 @@ def get_file_size(file_name, var_name_hdf5='mov'):
                     dcimgfile.close()
                 else:
                     print("ERROR:", filepath, "is not a valid DCIMG file.")
+            elif extension == '.tsm':
+                with open(file_name, mode='rb') as file:
+                    fileContent = file.read(2880)
+                dims = [0, 0]
+                dims[0] = int(str(fileContent[240:270]).partition("=")[2].strip()[0:-1])
+                dims[1] = int(str(fileContent[320:350]).partition("=")[2].strip()[0:-1])
+                T = int(str(fileContent[400:430]).partition("=")[2].strip()[0:-1])
+
             elif extension in ('.avi', '.mkv'):
                 if 'CAIMAN_LOAD_AVI_FORCE_FALLBACK' in os.environ:
                         pims_movie = pims.PyAVReaderTimed(file_name) # duplicated code, but no cleaner way

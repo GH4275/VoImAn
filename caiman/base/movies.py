@@ -1546,6 +1546,31 @@ def load(file_name: Union[str, List[str]],
             else:
                 print("ERROR:", filepath, "is not a valid DCIMG file.")
 
+        elif extension == '.tsm':
+            with open(file_name, mode='rb') as file:
+                fileContent = file.read()
+
+            row = int(str(fileContent[240:270]).partition("=")[2].strip()[0:-1])
+            col = int(str(fileContent[320:350]).partition("=")[2].strip()[0:-1])
+            frames = int(str(fileContent[400:430]).partition("=")[2].strip()[0:-1])
+            input_arr = np.zeros((frames, row, col), dtype=np.int16)
+            darkFrame = np.zeros((1, row, col), dtype=np.int16)
+            #Get the dark frame at the end of the file
+            dark_f = np.frombuffer(fileContent[2880 + (row * col * 2 * frames):2880 + (row * col * 2 * (frames + 1))],
+                                             dtype=np.int16).reshape((row, col))
+
+            #If the dark frame was not saved, this value is usually higher
+            if np.max(dark_f)<=1000:
+                darkFrame = dark_f
+
+            # Get each frame and subtract the dark frame
+            for i in range(frames):
+                input_arr[i, :, :] = np.frombuffer(fileContent[2880 + (row * col * 2 * i):2880 + (row * col * 2 * (i + 1))],
+                                             dtype=np.int16).reshape((row, col)) - darkFrame
+
+            input_arr = input_arr[subindices]
+            input_arr = np.squeeze(input_arr)
+
         elif extension == '.npy': # load npy file
             if fr is None:
                 fr = 30

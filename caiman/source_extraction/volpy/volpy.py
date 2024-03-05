@@ -157,7 +157,7 @@ class VOLPY(object):
         
         for i in results[0].keys():
             try:
-                self.estimates[i] = np.array([results[j][i] for j in range(N)])
+                self.estimates[i] = np.array([results[j][i] for j in range(N)], dtype='object')
             except:
                 self.estimates[i] = [results[j][i] for j in range(N)]
                 
