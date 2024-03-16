@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 """
 
@@ -35,7 +34,6 @@ Copyright (C) 2011, the scikit-image team
  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
  IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  POSSIBILITY OF SUCH DAMAGE.
-
 """
 
 import collections
@@ -49,23 +47,26 @@ import os
 import sys
 import pylab as pl
 import tifffile
-from typing import List, Optional, Tuple
+from typing import Optional
 from skimage.transform import resize as resize_sk
 from skimage.transform import warp as warp_sk
 
-import caiman as cm
+import caiman
 import caiman.base.movies
+import caiman.mmapping
 import caiman.motion_correction
 import caiman.paths
-from .mmapping import prepare_shape
 
 try:
     cv2.setNumThreads(0)
 except:
     pass
 
-from cv2 import dft as fftn
-from cv2 import idft as ifftn
+try:
+    profile
+except:
+    def profile(a): return a
+
 opencv = True
 
 try:
@@ -75,13 +76,6 @@ try:
     HAS_CUDA = True
 except ImportError:
     HAS_CUDA = False
-
-try:
-    profile
-except:
-    def profile(a): return a
-#%%
-
 
 class MotionCorrect(object):
     """
@@ -114,7 +108,7 @@ class MotionCorrect(object):
                will quickly initialize a template with the first frames
 
            splits_rig': int
-            for parallelization split the movies in  num_splits chuncks across time
+            for parallelization split the movies in  num_splits chunks across time
 
            num_splits_to_process_rig: list,
                if none all the splits are processed and the movie is saved, otherwise at each iteration
@@ -124,13 +118,13 @@ class MotionCorrect(object):
                intervals at which patches are laid out for motion correction
 
            overlaps: tuple
-               overlap between pathes (size of patch strides+overlaps)
+               overlap between patches (size of patch strides+overlaps)
 
            pw_rigig: bool, default: False
                flag for performing motion correction when calling motion_correct
 
            splits_els':list
-               for parallelization split the movies in  num_splits chuncks across time
+               for parallelization split the movies in  num_splits chunks across time
 
            num_splits_to_process_els: list,
                if none all the splits are processed and the movie is saved  otherwise at each iteration
@@ -175,7 +169,7 @@ class MotionCorrect(object):
         """
         if 'ndarray' in str(type(fname)) or isinstance(fname, caiman.base.movies.movie):
             logging.info('Creating file for motion correction "tmp_mov_mot_corr.hdf5"')
-            cm.movie(fname).save('tmp_mov_mot_corr.hdf5')
+            caiman.movie(fname).save('tmp_mov_mot_corr.hdf5')
             fname = ['tmp_mov_mot_corr.hdf5']
 
         if not isinstance(fname, list):
@@ -231,10 +225,7 @@ class MotionCorrect(object):
         #       from a method that is not a constructor
         if self.min_mov is None:
             if self.gSig_filt is None:
-                # self.min_mov = np.array([cm.load(self.fname[0],
-                #                                  var_name_hdf5=self.var_name_hdf5,
-                #                                  subindices=slice(400))]).min()
-                iterator = cm.base.movies.load_iter(self.fname[0],
+                iterator = caiman.base.movies.load_iter(self.fname[0],
                                                     var_name_hdf5=self.var_name_hdf5)
                 mi = np.inf
                 for _ in range(400):
@@ -245,7 +236,7 @@ class MotionCorrect(object):
                 self.min_mov = mi
             else:
                 self.min_mov = np.array([high_pass_filter_space(m_, self.gSig_filt)
-                    for m_ in cm.load(self.fname[0], var_name_hdf5=self.var_name_hdf5,
+                    for m_ in caiman.load(self.fname[0], var_name_hdf5=self.var_name_hdf5,
                                       subindices=slice(400))]).min()
 
         if self.pw_rigid:
@@ -288,9 +279,9 @@ class MotionCorrect(object):
         logging.debug('Entering Rigid Motion Correction')
         logging.debug(-self.min_mov)  # XXX why the minus?
         self.total_template_rig = template
-        self.templates_rig:List = []
-        self.fname_tot_rig:List = []
-        self.shifts_rig:List = []
+        self.templates_rig:list = []
+        self.fname_tot_rig:list = []
+        self.shifts_rig:list = []
 
         for fname_cur in self.fname:
             _fname_tot_rig, _total_template_rig, _templates_rig, _shifts_rig = motion_correct_batch_rigid(
@@ -353,14 +344,14 @@ class MotionCorrect(object):
         else:
             self.total_template_els = template
 
-        self.fname_tot_els:List = []
-        self.templates_els:List = []
-        self.x_shifts_els:List = []
-        self.y_shifts_els:List = []
+        self.fname_tot_els:list = []
+        self.templates_els:list = []
+        self.x_shifts_els:list = []
+        self.y_shifts_els:list = []
         if self.is3D:
-            self.z_shifts_els:List = []
+            self.z_shifts_els:list = []
 
-        self.coord_shifts_els:List = []
+        self.coord_shifts_els:list = []
         for name_cur in self.fname:
             _fname_tot_els, new_template_els, _templates_els,\
                 _x_shifts_els, _y_shifts_els, _z_shifts_els, _coord_shifts_els = motion_correct_batch_pwrigid(
@@ -396,16 +387,16 @@ class MotionCorrect(object):
         Applies shifts found by registering one file to a different file. Useful
         for cases when shifts computed from a structural channel are applied to a
         functional channel. Currently only application of shifts through openCV is
-        supported. Returns either cm.movie or the path to a memory mapped file.
+        supported. Returns either caiman.movie or the path to a memory mapped file.
 
         Args:
-            fname: str of List[str]
+            fname: str of list[str]
                 name(s) of the movie to motion correct. It should not contain
                 nans. All the loadable formats from CaImAn are acceptable
 
             rigid_shifts: bool (True)
                 apply rigid or pw-rigid shifts (must exist in the mc object)
-                deprectated (read directly from mc.pw_rigid)
+                deprecated (read directly from mc.pw_rigid)
 
             save_memmap: bool (False)
                 flag for saving the resulting file in memory mapped form
@@ -424,7 +415,7 @@ class MotionCorrect(object):
                 caiman movie object with applied shifts (not memory mapped)
         """
 
-        Y = cm.load(fname).astype(np.float32)
+        Y = caiman.load(fname).astype(np.float32)
         if remove_min: 
             ymin = Y.min()
             if ymin < 0:
@@ -530,15 +521,14 @@ class MotionCorrect(object):
             dims = m_reg.shape
             fname_tot = caiman.paths.memmap_frames_filename(save_base_name, dims[1:], dims[0], order)
             big_mov = np.memmap(fname_tot, mode='w+', dtype=np.float32,
-                        shape=prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
+                        shape=caiman.mmapping.prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
             big_mov[:] = np.reshape(m_reg.transpose(1, 2, 0), (np.prod(dims[1:]), dims[0]), order='F')
             big_mov.flush()
             del big_mov
             return fname_tot
         else:
-            return cm.movie(m_reg)
+            return caiman.movie(m_reg)
 
-#%%
 def apply_shift_iteration(img, shift, border_nan:bool=False, border_type=cv2.BORDER_REFLECT):
     # todo todocument
 
@@ -580,8 +570,6 @@ def apply_shift_iteration(img, shift, border_nan:bool=False, border_type=cv2.BOR
 
     return img
 
-
-#%%
 def apply_shift_online(movie_iterable, xy_shifts, save_base_name=None, order='F'):
     """
     Applies rigid shifts to a loaded movie. Useful when processing a dataset
@@ -592,7 +580,7 @@ def apply_shift_online(movie_iterable, xy_shifts, save_base_name=None, order='F'
     Currently only rigid shifts are supported supported.
 
     Args:
-        movie_iterable: cm.movie or np.array
+        movie_iterable: caiman.movie or np.array
             Movie to be registered in T x X x Y format
 
         xy_shifts: list
@@ -621,7 +609,7 @@ def apply_shift_online(movie_iterable, xy_shifts, save_base_name=None, order='F'
         fname_tot = caiman.paths.memmap_frames_filename(save_base_name, dims[1:], dims[0], order)
         fname_tot = caiman.paths.fn_relocated(fname_tot)
         big_mov = np.memmap(fname_tot, mode='w+', dtype=np.float32,
-                            shape=prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
+                            shape=caiman.mmapping.prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
 
     for page, shift in zip(movie_iterable, xy_shifts):
         if 'tifffile' in str(type(movie_iterable[0])):
@@ -642,7 +630,6 @@ def apply_shift_online(movie_iterable, xy_shifts, save_base_name=None, order='F'
         return fname_tot
     else:
         return np.array(new_mov)
-#%%
 
 def motion_correct_oneP_rigid(
         filename,
@@ -674,7 +661,7 @@ def motion_correct_oneP_rigid(
         Motion correction object
     '''
     min_mov = np.array([caiman.motion_correction.high_pass_filter_space(
-        m_, gSig_filt) for m_ in cm.load(filename[0], subindices=range(400))]).min()
+        m_, gSig_filt) for m_ in caiman.load(filename[0], subindices=range(400))]).min()
     new_templ = None
 
     # TODO: needinfo how the classes works
@@ -733,8 +720,8 @@ def motion_correct_oneP_nonrigid(
     '''
 
     if new_templ is None:
-        min_mov = np.array([cm.motion_correction.high_pass_filter_space(
-            m_, gSig_filt) for m_ in cm.load(filename, subindices=range(400))]).min()
+        min_mov = np.array([caiman.motion_correction.high_pass_filter_space(
+            m_, gSig_filt) for m_ in caiman.load(filename, subindices=range(400))]).min()
     else:
         min_mov = np.min(new_templ)
 
@@ -788,8 +775,6 @@ def motion_correct_online_multifile(list_files, add_to_movie, order='C', **kwarg
 
     return all_names, all_shifts, all_xcorrs, all_templates
 
-
-#%%
 def motion_correct_online(movie_iterable, add_to_movie, max_shift_w=25, max_shift_h=25, save_base_name=None, order='C',
                           init_frames_template=100, show_movie=False, bilateral_blur=False, template=None, min_count=1000,
                           border_to_0=0, n_iter=1, remove_blanks=False, show_template=False, return_mov=False,
@@ -842,7 +827,7 @@ def motion_correct_online(movie_iterable, add_to_movie, max_shift_w=25, max_shif
 
     big_mov = None
     if return_mov:
-        mov:Optional[List] = []
+        mov:Optional[list] = []
     else:
         mov = None
 
@@ -858,7 +843,7 @@ def motion_correct_online(movie_iterable, add_to_movie, max_shift_w=25, max_shif
 
             fname_tot:Optional[str] = caiman.paths.memmap_frames_filename(save_base_name, dims[1:], dims[0], order)
             big_mov = np.memmap(fname_tot, mode='w+', dtype=np.float32,
-                                shape=prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
+                                shape=caiman.mmapping.prepare_shape((np.prod(dims[1:]), dims[0])), order=order)
 
         else:
             fname_tot = None
@@ -949,8 +934,6 @@ def motion_correct_online(movie_iterable, add_to_movie, max_shift_w=25, max_shif
 
     return shifts, xcorrs, template, fname_tot, mov
 
-
-#%%
 def motion_correct_iteration(img, template, frame_num, max_shift_w=25,
                              max_shift_h=25, bilateral_blur=False, diameter=10, sigmaColor=10000, sigmaSpace=0):
     # todo todocument
@@ -996,9 +979,6 @@ def motion_correct_iteration(img, template, frame_num, max_shift_w=25,
 
     return new_img, new_templ, shift, avg_corr
 
-#%%
-
-
 @profile
 def motion_correct_iteration_fast(img, template, max_shift_w=10, max_shift_h=10):
     """ For using in online realtime scenarios """
@@ -1039,9 +1019,6 @@ def motion_correct_iteration_fast(img, template, max_shift_w=10, max_shift_h=10)
     shift = [sh_x_n, sh_y_n]
 
     return new_img, shift
-
-#%%
-
 
 def bin_median(mat, window=10, exclude_nans=True):
     """ compute median of 3D array in along axis o by binning values
@@ -1114,7 +1091,7 @@ def process_movie_parallel(arg_in):
     if template is not None:
         if isinstance(template, str):
             if os.path.exists(template):
-                template = cm.load(template, fr=1)
+                template = caiman.load(template, fr=1)
             else:
                 raise Exception('Path to template does not exist:' + template)
 
@@ -1124,9 +1101,9 @@ def process_movie_parallel(arg_in):
         Yr = fname
 
     elif 'ndarray' in type_input:
-        Yr = cm.movie(np.array(fname, dtype=np.float32), fr=fr)
+        Yr = caiman.movie(np.array(fname, dtype=np.float32), fr=fr)
     elif isinstance(fname, str):
-        Yr = cm.load(fname, fr=fr)
+        Yr = caiman.load(fname, fr=fr)
     else:
         raise Exception('Unknown input type:' + type_input)
 
@@ -1169,8 +1146,6 @@ def process_movie_parallel(arg_in):
     else:
         return None
 
-
-#%%
 def motion_correct_parallel(file_names, fr=10, template=None, margins_out=0,
                             max_shift_w=5, max_shift_h=5, remove_blanks=False, apply_smooth=False, dview=None, save_hdf5=True):
     """motion correct many movies usingthe ipyparallel cluster
@@ -1186,7 +1161,7 @@ def motion_correct_parallel(file_names, fr=10, template=None, margins_out=0,
             number of pixels to remove from the borders
 
     Returns:
-        base file names of the motion corrected files:List[str]
+        base file names of the motion corrected files:list[str]
 
     Raises:
         Exception
@@ -1222,9 +1197,6 @@ def motion_correct_parallel(file_names, fr=10, template=None, margins_out=0,
         raise
 
     return file_res
-
-#%%
-
 
 def _upsampled_dft(data, upsampled_region_size,
                    upsample_factor=1, axis_offsets=None):
@@ -1398,8 +1370,6 @@ def close_cuda_process(n):
     except:
         pass
 
-#%%
-
 def register_translation_3d(src_image, target_image, upsample_factor = 1,
                             space = "real", shifts_lb = None, shifts_ub = None,
                             max_shifts = [10,10,10]):
@@ -1547,8 +1517,6 @@ def register_translation_3d(src_image, target_image, upsample_factor = 1,
             shifts[dim] = 0
 
     return shifts, src_freq, _compute_phasediff(CCmax)
-
-#%%
 
 def register_translation(src_image, target_image, upsample_factor=1,
                          space="real", shifts_lb=None, shifts_ub=None, max_shifts=(10, 10),
@@ -1701,11 +1669,11 @@ def register_translation(src_image, target_image, upsample_factor=1,
             del(image_gpu)
             del(freq_gpu)
         elif opencv:
-            src_freq_1 = fftn(
+            src_freq_1 = cv2.dft(
                 src_image, flags=cv2.DFT_COMPLEX_OUTPUT + cv2.DFT_SCALE)
             src_freq = src_freq_1[:, :, 0] + 1j * src_freq_1[:, :, 1]
             src_freq = np.array(src_freq, dtype=np.complex128, copy=False)
-            target_freq_1 = fftn(
+            target_freq_1 = cv2.dft(
                 target_image, flags=cv2.DFT_COMPLEX_OUTPUT + cv2.DFT_SCALE)
             target_freq = target_freq_1[:, :, 0] + 1j * target_freq_1[:, :, 1]
             target_freq = np.array(
@@ -1736,12 +1704,12 @@ def register_translation(src_image, target_image, upsample_factor=1,
 
         image_product_cv = np.dstack(
             [np.real(image_product), np.imag(image_product)])
-        cross_correlation = fftn(
+        cross_correlation = cv2.dft(
             image_product_cv, flags=cv2.DFT_INVERSE + cv2.DFT_SCALE)
         cross_correlation = cross_correlation[:,
                                               :, 0] + 1j * cross_correlation[:, :, 1]
     else:
-        cross_correlation = ifftn(image_product)
+        cross_correlation = cv2.idft(image_product)
 
     # Locate maximum
     new_cross_corr = np.abs(cross_correlation)
@@ -1818,8 +1786,6 @@ def register_translation(src_image, target_image, upsample_factor=1,
 
     return shifts, src_freq, _compute_phasediff(CCmax)
 
-#%%
-
 def apply_shifts_dft(src_freq, shifts, diffphase, is_freq=True, border_nan=True):
     """
     adapted from SIMA (https://github.com/losonczylab) and the
@@ -1871,7 +1837,7 @@ def apply_shifts_dft(src_freq, shifts, diffphase, is_freq=True, border_nan=True)
             src_freq = np.fft.fftn(src_freq)
         else:
             src_freq = np.dstack([np.real(src_freq), np.imag(src_freq)])
-            src_freq = fftn(src_freq, flags=cv2.DFT_COMPLEX_OUTPUT + cv2.DFT_SCALE)
+            src_freq = cv2.dft(src_freq, flags=cv2.DFT_COMPLEX_OUTPUT + cv2.DFT_SCALE)
             src_freq = src_freq[:, :, 0] + 1j * src_freq[:, :, 1]
             src_freq = np.array(src_freq, dtype=np.complex128, copy=False)
 
@@ -1897,7 +1863,7 @@ def apply_shifts_dft(src_freq, shifts, diffphase, is_freq=True, border_nan=True)
         new_img = np.real(np.fft.ifftn(Greg))
     else:
         Greg = np.dstack([np.real(Greg), np.imag(Greg)])
-        new_img = ifftn(Greg)[:, :, 0]
+        new_img = cv2.idft(Greg)[:, :, 0]
 
     if border_nan is not False:
         max_w, max_h, min_w, min_h = 0, 0, 0, 0
@@ -1947,8 +1913,6 @@ def apply_shifts_dft(src_freq, shifts, diffphase, is_freq=True, border_nan=True)
 
     return new_img
 
-
-#%%
 def sliding_window(image, overlaps, strides):
     """ efficiently and lazily slides a window across the image
 
@@ -2085,7 +2049,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
             return cv2.filter2D(np.array(img_orig, dtype=np.float32),
                                 -1, ker2D, borderType=cv2.BORDER_REFLECT)
         else:  # movie
-            return cm.movie(np.array([cv2.filter2D(np.array(img, dtype=np.float32),
+            return caiman.movie(np.array([cv2.filter2D(np.array(img, dtype=np.float32),
                                 -1, ker2D, borderType=cv2.BORDER_REFLECT) for img in img_orig]))     
     else:  # Butterworth
         rows, cols = img_orig.shape[-2:]
@@ -2096,7 +2060,7 @@ def high_pass_filter_space(img_orig, gSig_filt=None, freq=None, order=None):
             return cv2.idft(cv2.dft(img_orig, flags=cv2.DFT_COMPLEX_OUTPUT) *
                             H[..., None])[..., 0] / (rows*cols)
         else:  # movie
-            return cm.movie(np.array([cv2.idft(cv2.dft(img, flags=cv2.DFT_COMPLEX_OUTPUT) * 
+            return caiman.movie(np.array([cv2.idft(cv2.dft(img, flags=cv2.DFT_COMPLEX_OUTPUT) * 
                             H[..., None])[..., 0] for img in img_orig]) / (rows*cols))
 
 def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=None, newstrides=None, upsample_factor_grid=4,
@@ -2119,7 +2083,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
             strides of the patches in which the FOV is subdivided
 
         overlaps: tuple
-            amount of pixel overlaping between patches along each dimension
+            amount of pixel overlapping between patches along each dimension
 
         max_shifts: tuple
             max shifts in x and y
@@ -2128,7 +2092,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
             strides between patches along each dimension when upsampling the vector fields
 
         newoverlaps:tuple
-            amount of pixel overlaping between patches along each dimension when upsampling the vector fields
+            amount of pixel overlapping between patches along each dimension when upsampling the vector fields
 
         upsample_factor_grid: int
             if newshapes or newstrides are not specified this is inferred upsampling by a constant factor the cvector field
@@ -2158,7 +2122,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
 
 
     """
-
+    logging.debug("Starting tile and correct")
     img = img.astype(np.float64).copy()
     template = template.astype(np.float64).copy()
 
@@ -2195,6 +2159,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
         return new_img - add_to_movie, (-rigid_shts[0], -rigid_shts[1]), None, None
     else:
         # extract patches
+        logging.info("Extracting patches")
         templates = [
             it[-1] for it in sliding_window(template, overlaps=overlaps, strides=strides)]
         xy_grid = [(it[0], it[1]) for it in sliding_window(
@@ -2217,6 +2182,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
             ub_shifts = None
 
         # extract shifts for each patch
+        logging.info("extracting shifts for each patch")
         shfts_et_all = [register_translation(
             a, b, c, shifts_lb=lb_shifts, shifts_ub=ub_shifts, max_shifts=max_shifts, use_cuda=use_cuda) for a, b, c in zip(
             imgs, templates, [upsample_factor_fft] * num_tiles)]
@@ -2307,7 +2273,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
 
             new_img = new_img / normalizer
 
-        else:  # in case the difference in shift between neighboring patches is larger than 0.5 pixels we do not interpolate in the overlaping area
+        else:  # if the difference in shift between neighboring patches is larger than 0.5 pixels we do not interpolate in the overlapping area
             half_overlap_x = int(newoverlaps[0] / 2)
             half_overlap_y = int(newoverlaps[1] / 2)
             for (x, y), (idx_0, idx_1), im, (_, _), weight_mat in zip(start_step, xy_grid, imgs, total_shifts, weight_matrix):
@@ -2344,8 +2310,7 @@ def tile_and_correct(img, template, strides, overlaps, max_shifts, newoverlaps=N
                 pass
         return new_img - add_to_movie, total_shifts, start_step, xy_grid
 
-#%%
-def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, overlaps:Tuple, max_shifts:Tuple, newoverlaps:Optional[Tuple]=None, newstrides:Optional[Tuple]=None, upsample_factor_grid:int=4,
+def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:tuple, overlaps:tuple, max_shifts:tuple, newoverlaps:Optional[tuple]=None, newstrides:Optional[tuple]=None, upsample_factor_grid:int=4,
                      upsample_factor_fft:int=10, show_movie:bool=False, max_deviation_rigid:int=2, add_to_movie:int=0, shifts_opencv:bool=True, gSig_filt=None,
                      use_cuda:bool=False, border_nan:bool=True):
     """ perform piecewise rigid motion correction iteration, by
@@ -2365,7 +2330,7 @@ def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, over
             strides of the patches in which the FOV is subdivided
 
         overlaps: tuple
-            amount of pixel overlaping between patches along each dimension
+            amount of pixel overlapping between patches along each dimension
 
         max_shifts: tuple
             max shifts in x, y, and z
@@ -2374,7 +2339,7 @@ def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, over
             strides between patches along each dimension when upsampling the vector fields
 
         newoverlaps:tuple
-            amount of pixel overlaping between patches along each dimension when upsampling the vector fields
+            amount of pixel overlapping between patches along each dimension when upsampling the vector fields
 
         upsample_factor_grid: int
             if newshapes or newstrides are not specified this is inferred upsampling by a constant factor the cvector field
@@ -2571,7 +2536,7 @@ def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, over
 
             new_img = new_img / normalizer
 
-        else:  # in case the difference in shift between neighboring patches is larger than 0.5 pixels we do not interpolate in the overlaping area
+        else:  # if the difference in shift between neighboring patches is larger than 0.5 pixels we do not interpolate in the overlapping area
             half_overlap_x = int(newoverlaps[0] / 2)
             half_overlap_y = int(newoverlaps[1] / 2)
             half_overlap_z = int(newoverlaps[2] / 2)
@@ -2615,15 +2580,12 @@ def tile_and_correct_3d(img:np.ndarray, template:np.ndarray, strides:Tuple, over
             except:
                 pass
         return new_img - add_to_movie, total_shifts, start_step, xyz_grid
-#%%
 
 def compute_flow_single_frame(frame, templ, pyr_scale=.5, levels=3, winsize=100, iterations=15, poly_n=5,
                               poly_sigma=1.2 / 5, flags=0):
     flow = cv2.calcOpticalFlowFarneback(
         templ, frame, None, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags)
     return flow
-#%%
-
 
 def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_dim, pyr_scale=.5, levels=3,
                                       winsize=100, iterations=15, poly_n=5, poly_sigma=1.2 / 5, flags=0,
@@ -2640,7 +2602,7 @@ def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_di
         disable_tqdm = True
         
     vmin, vmax = -max_flow, max_flow
-    m = cm.load(fname)
+    m = caiman.load(fname)
     if gSig_filt is not None:
         m = high_pass_filter_space(m, gSig_filt)
     mi, ma = m.min(), m.max()
@@ -2667,7 +2629,7 @@ def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_di
     img_corr = m.local_correlations(eight_neighbours=True, swap_dim=swap_dim)
     logging.debug(m.shape)
     if template is None:
-        tmpl = cm.motion_correction.bin_median(m)
+        tmpl = caiman.motion_correction.bin_median(m)
     else:
         tmpl = template
 
@@ -2755,8 +2717,6 @@ def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_di
              tmpl=tmpl, smoothness_corr=smoothness_corr, img_corr=img_corr)
     return tmpl, correlations, flows, norms, smoothness
 
-
-#%%
 def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_splits_to_process=None, num_iter=1,
                                template=None, shifts_opencv=False, save_movie_rigid=False, add_to_movie=None,
                                nonneg_movie=False, gSig_filt=None, subidx=slice(None, None, 1), use_cuda=False,
@@ -2817,14 +2777,14 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
 
     """
 
-    dims, T = cm.source_extraction.cnmf.utilities.get_file_size(fname, var_name_hdf5=var_name_hdf5)
+    dims, T = caiman.base.movies.get_file_size(fname, var_name_hdf5=var_name_hdf5)
     Ts = np.arange(T)[subidx].shape[0]
     step = Ts // 10 if is3D else Ts // 50
     corrected_slicer = slice(subidx.start, subidx.stop, step + 1)
-    m = cm.load(fname, var_name_hdf5=var_name_hdf5, subindices=corrected_slicer)
+    m = caiman.load(fname, var_name_hdf5=var_name_hdf5, subindices=corrected_slicer)
 
     if len(m.shape) < 3:
-        m = cm.load(fname, var_name_hdf5=var_name_hdf5)
+        m = caiman.load(fname, var_name_hdf5=var_name_hdf5)
         m = m[corrected_slicer]
         logging.warning("Your original file was saved as a single page " +
                         "file. Consider saving it in multiple smaller files" +
@@ -2837,7 +2797,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
 
     if template is None:
         if gSig_filt is not None:
-            m = cm.movie(
+            m = caiman.movie(
                 np.array([high_pass_filter_space(m_, gSig_filt) for m_ in m]))
         if is3D:     
             # TODO - motion_correct_3d needs to be implemented in movies.py
@@ -2862,7 +2822,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
 
     save_movie = False
     fname_tot_rig = None
-    res_rig:List = []
+    res_rig:list = []
     for iter_ in range(num_iter):
         logging.debug(iter_)
         old_templ = new_templ.copy()
@@ -2893,7 +2853,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
 
     total_template = new_templ
     templates = []
-    shifts:List = []
+    shifts:list = []
     for rr in res_rig:
         shift_info, idxs, tmpl = rr
         templates.append(tmpl)
@@ -2965,7 +2925,7 @@ def motion_correct_batch_pwrigid(fname, max_shifts, strides, overlaps, add_to_mo
             list of produced templates, one per batch
 
         shifts: list
-            inferred rigid shifts to corrrect the movie
+            inferred rigid shifts to correct the movie
 
     Raises:
         Exception 'You need to initialize the template with a good estimate. See the motion'
@@ -3041,8 +3001,6 @@ def motion_correct_batch_pwrigid(fname, max_shifts, strides, overlaps, add_to_mo
 
     return fname_tot_els, total_template, templates, x_shifts, y_shifts, z_shifts, coord_shifts
 
-
-#%% in parallel
 def tile_and_correct_wrapper(params):
     """Does motion correction on specified image frames
 
@@ -3076,7 +3034,7 @@ def tile_and_correct_wrapper(params):
     extension = extension.lower()
     shift_info = []
 
-    imgs = cm.load(img_name, subindices=idxs, var_name_hdf5=var_name_hdf5,is3D=is3D)
+    imgs = caiman.load(img_name, subindices=idxs, var_name_hdf5=var_name_hdf5,is3D=is3D)
     imgs = imgs[(slice(None),) + indices]
     mc = np.zeros(imgs.shape, dtype=np.float32)
     if not imgs[0].shape == template.shape:
@@ -3105,10 +3063,10 @@ def tile_and_correct_wrapper(params):
                                                                        shifts_opencv=shifts_opencv, gSig_filt=gSig_filt,
                                                                        use_cuda=use_cuda, border_nan=border_nan)
             shift_info.append([total_shift, start_step, xy_grid])
-    # 
+
     if out_fname is not None:
         outv = np.memmap(out_fname, mode='r+', dtype=np.float32,
-                         shape=prepare_shape(shape_mov), order='F')
+                         shape=caiman.mmapping.prepare_shape(shape_mov), order='F')
         if nonneg_movie:
             bias = np.float32(add_to_movie)
         else:
@@ -3136,7 +3094,7 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
     extension = extension.lower()
     is_fiji = False
 
-    dims, T = cm.source_extraction.cnmf.utilities.get_file_size(fname, var_name_hdf5=var_name_hdf5)
+    dims, T = caiman.base.movies.get_file_size(fname, var_name_hdf5=var_name_hdf5)
     z = np.zeros(dims)
     dims = z[indices].shape
     logging.debug(f'Number of Splits: {splits}')
@@ -3172,14 +3130,14 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
             fname_tot = os.path.join(os.path.split(fname)[0], fname_tot)
 
         np.memmap(fname_tot, mode='w+', dtype=np.float32,
-                  shape=prepare_shape(shape_mov), order=order)
+                  shape=caiman.mmapping.prepare_shape(shape_mov), order=order)
         logging.info(f'Saving file as {fname_tot}')
     else:
         fname_tot = None
 
     pars = []
     for idx in idxs:
-        logging.debug(f'Processing: frames: {idx}')
+        logging.debug(f'Extracting parameters for frames: {idx}')
         pars.append([fname, fname_tot, idx, shape_mov, template, strides, overlaps, max_shifts, np.array(
             add_to_movie, dtype=np.float32), max_deviation_rigid, upsample_factor_grid,
             newoverlaps, newstrides, shifts_opencv, nonneg_movie, gSig_filt, is_fiji,
@@ -3191,6 +3149,7 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
             res = dview.map(tile_and_correct_wrapper,pars)
             dview.map(close_cuda_process, range(len(pars)))
         elif 'multiprocessing' in str(type(dview)):
+            logging.debug("entering multiprocessing tile_and_correct_wrapper")
             res = dview.map_async(tile_and_correct_wrapper, pars).get(4294967)
         else:
             res = dview.map_sync(tile_and_correct_wrapper, pars)
