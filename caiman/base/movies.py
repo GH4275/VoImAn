@@ -29,7 +29,7 @@ from typing import Any, Optional, Union
 import warnings
 import zarr
 from zipfile import ZipFile
-
+from .dcimgpy import Dcimg
 import caiman.base.timeseries
 import caiman.base.traces
 import caiman.mmapping
@@ -1492,6 +1492,46 @@ def load(file_name: Union[str, list[str]],
                 if len(subindices) > 2:
                     input_arr = input_arr[:, :, subindices[2]]
 
+        elif extension == '.dcimg':
+            dcimgfile = Dcimg()
+            if dcimgfile.open(file_name):
+                input_arr = np.zeros((len(dcimgfile), dcimgfile.getImageHeight(), dcimgfile.getImageWidth()),
+                                     dtype=np.int16)
+                for i in range(0, len(dcimgfile)):
+                    input_arr[i] = dcimgfile.getImageData(i)
+
+                dcimgfile.close()
+                input_arr = input_arr[subindices]
+                input_arr = np.squeeze(input_arr)
+
+            else:
+                print("ERROR:", filepath, "is not a valid DCIMG file.")
+
+        elif extension == '.tsm':
+            with open(file_name, mode='rb') as file:
+                fileContent = file.read()
+
+            row = int(str(fileContent[240:270]).partition("=")[2].strip()[0:-1])
+            col = int(str(fileContent[320:350]).partition("=")[2].strip()[0:-1])
+            frames = int(str(fileContent[400:430]).partition("=")[2].strip()[0:-1])
+            input_arr = np.zeros((frames, row, col), dtype=np.int16)
+            darkFrame = np.zeros((1, row, col), dtype=np.int16)
+            #Get the dark frame at the end of the file
+            dark_f = np.frombuffer(fileContent[2880 + (row * col * 2 * frames):2880 + (row * col * 2 * (frames + 1))],
+                                             dtype=np.int16).reshape((row, col))
+
+            #If the dark frame was not saved, this value is usually higher
+            if np.max(dark_f)<=1000:
+                darkFrame = dark_f
+
+            # Get each frame and subtract the dark frame
+            for i in range(frames):
+                input_arr[i, :, :] = np.frombuffer(fileContent[2880 + (row * col * 2 * i):2880 + (row * col * 2 * (i + 1))],
+                                             dtype=np.int16).reshape((row, col)) - darkFrame
+
+            input_arr = input_arr[subindices]
+            input_arr = np.squeeze(input_arr)
+
         elif extension == '.npy': # load npy file
             if fr is None:
                 fr = 30
@@ -2245,6 +2285,23 @@ def get_file_size(file_name, var_name_hdf5:str='mov') -> tuple[tuple, Union[int,
                     T = len(tffl.pages)
                 else:
                     T, dims = siz[0], siz[1:]
+            elif extension == '.dcimg':
+                dcimgfile = Dcimg()
+                dims = [0, 0]
+                if dcimgfile.open(file_name):
+                    T = dcimgfile.getTotalFrames()
+                    dims[1] = dcimgfile.getImageWidth()
+                    dims[0] = dcimgfile.getImageHeight()
+                    dcimgfile.close()
+                else:
+                    print("ERROR:", filepath, "is not a valid DCIMG file.")
+            elif extension == '.tsm':
+                with open(file_name, mode='rb') as file:
+                    fileContent = file.read(2880)
+                dims = [0, 0]
+                dims[0] = int(str(fileContent[240:270]).partition("=")[2].strip()[0:-1])
+                dims[1] = int(str(fileContent[320:350]).partition("=")[2].strip()[0:-1])
+                T = int(str(fileContent[400:430]).partition("=")[2].strip()[0:-1])
             elif extension in ('.avi', '.mkv'):
                 if 'CAIMAN_LOAD_AVI_FORCE_FALLBACK' in os.environ:
                         pims_movie = pims.PyAVReaderTimed(file_name) # duplicated code, but no cleaner way
