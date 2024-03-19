@@ -78,7 +78,7 @@ class movie(caiman.base.timeseries.timeseries):
            (isinstance(input_arr, h5py._hl.dataset.Dataset)) or \
            ('mmap' in str(type(input_arr))) or \
            ('tifffile' in str(type(input_arr))):
-            return super().__new__(cls, input_arr, **kwargs)  
+            return super().__new__(cls, input_arr, **kwargs)
         else:
             raise Exception('Input must be an ndarray, use load instead!')
 
@@ -520,7 +520,7 @@ class movie(caiman.base.timeseries.timeseries):
         ret[:,:,:] = self[crop_begin:t - crop_end, crop_top:h - crop_bottom, crop_left:w - crop_right]
         return ret
 
-    def removeBL(self, windowSize:int=100, quantilMin:int=8, in_place:bool=False, returnBL:bool=False):                   
+    def removeBL(self, windowSize:int=100, quantilMin:int=8, in_place:bool=False, returnBL:bool=False):
         """
         Remove baseline from movie using percentiles over a window
         Args:
@@ -543,24 +543,24 @@ class movie(caiman.base.timeseries.timeseries):
         res = np.array(list(map(myperc,iter_win))).T
         if returnBL:
                 return caiman.movie(cv2.resize(res,pixs.shape[::-1]),fr=self.fr).to3DFromPixelxTime(self.shape)
-        if (not in_place):            
+        if (not in_place):
             return (pixs-cv2.resize(res,pixs.shape[::-1])).to3DFromPixelxTime(self.shape)
         else:
-            self -= caiman.movie(cv2.resize(res,pixs.shape[::-1]),fr=self.fr).to3DFromPixelxTime(self.shape) 
+            self -= caiman.movie(cv2.resize(res,pixs.shape[::-1]),fr=self.fr).to3DFromPixelxTime(self.shape)
             return self
-    
+
     def to2DPixelxTime(self, order='F'):
         """
         Transform 3D movie into 2D
         """
-        return self.transpose([2,1,0]).reshape((-1,self.shape[0]),order=order)  
+        return self.transpose([2,1,0]).reshape((-1,self.shape[0]),order=order)
 
     def to3DFromPixelxTime(self, shape, order='F'):
         """
             Transform 2D movie into 3D
         """
         return to_3D(self,shape[::-1],order=order).transpose([2,1,0])
-    
+
     def computeDFF(self, secsWindow: int = 5, quantilMin: int = 8, method: str = 'only_baseline', in_place: bool = False,
                    order: str = 'F') -> tuple[Any, Any]:
         """
@@ -607,7 +607,7 @@ class movie(caiman.base.timeseries.timeseries):
         # compute baseline quickly
         logging.debug("binning data ...")
         sys.stdout.flush()
-        
+
         if not in_place:
             movBL = np.reshape(mov_out.copy(),
                                (downsampfact, int(numFramesNew // downsampfact), linePerFrame, pixPerLine),
@@ -639,7 +639,7 @@ class movie(caiman.base.timeseries.timeseries):
                 raise Exception('Unknown method')
         else:
             mov_out = movBL
-            
+
         mov_out = mov_out[padbefore:len(movBL) - padafter, :, :]
         logging.debug('Final Size Movie:' + str(self.shape))
         return mov_out, movie(movBL,
@@ -1480,7 +1480,7 @@ def load(file_name: Union[str, list[str]],
                 else:
                     subindices = [np.r_[range(dims[0])]]
                     start_frame = 0
-                    
+
                 # Extract the data (note dims[0] is num frames)
                 input_arr = np.zeros((dims[0], height, width), dtype=np.uint8)
                 for i, ind in enumerate(subindices[0]):
@@ -1509,30 +1509,34 @@ def load(file_name: Union[str, list[str]],
 
         elif extension == '.tsm':
             with open(file_name, mode='rb') as file:
-                fileContent = file.read()
+                fileContent = file.read(2880)
 
             row = int(str(fileContent[240:270]).partition("=")[2].strip()[0:-1])
             col = int(str(fileContent[320:350]).partition("=")[2].strip()[0:-1])
             frames = int(str(fileContent[400:430]).partition("=")[2].strip()[0:-1])
             input_arr = np.zeros((frames, row, col), dtype=np.int16)
             darkFrame = np.zeros((1, row, col), dtype=np.int16)
-            #Get the dark frame at the end of the file
-            dark_f = np.frombuffer(fileContent[2880 + (row * col * 2 * frames):2880 + (row * col * 2 * (frames + 1))],
-                                             dtype=np.int16).reshape((row, col))
+            with open(file_name, mode='rb') as file:
+                file.seek(2880 + (row * col * 2 * frames))
+                fileContent = file.read(row * col * 2)
+            # Get the dark frame at the end of the file
+            dark_f = np.frombuffer(fileContent, dtype=np.int16).reshape((row, col))
 
-            #If the dark frame was not saved, this value is usually higher
-            if np.max(dark_f)<=1000:
+            # If the dark frame was not saved, this value is usually higher
+            if np.max(dark_f) <= 1000:
                 darkFrame = dark_f
 
             # Get each frame and subtract the dark frame
-            for i in range(frames):
-                input_arr[i, :, :] = np.frombuffer(fileContent[2880 + (row * col * 2 * i):2880 + (row * col * 2 * (i + 1))],
-                                             dtype=np.int16).reshape((row, col)) - darkFrame
+            with open(file_name, mode='rb') as file:
+                for i in range(frames):
+                    file.seek(2880+(row * col * 2 * i))
+                    fileContent = file.read(row * col * 2)
+                    input_arr[i, :, :] = np.frombuffer(fileContent, dtype=np.int16).reshape((row, col)) - darkFrame
 
             input_arr = input_arr[subindices]
             input_arr = np.squeeze(input_arr)
 
-        elif extension == '.npy': # load npy file
+        elif extension == '.npy':  # load npy file
             if fr is None:
                 fr = 30
             if in_memory:
@@ -1729,7 +1733,7 @@ def _load_behavior(file_name:str) -> Any:
                 input_arr = np.vstack(input_arr)
         else:
             raise Exception(f'_load_behavior() only accepts hdf5 files formatted a certain way. Please do not use this function.')
- 
+
     else:
         logging.error(f"File request:[{file_name}] not found!")
         raise Exception(f'File {file_name} not found!')
@@ -2046,7 +2050,7 @@ def from_zipfiles_to_movie_lists(zipfile_name: str, max_frames_per_movie: int = 
     return movie_list
 
 
-def rolling_window(ndarr, window_size, stride):   
+def rolling_window(ndarr, window_size, stride):
         """
         generates efficient rolling window for running statistics
         Args:
@@ -2063,7 +2067,7 @@ def rolling_window(ndarr, window_size, stride):
 
         i = 0 # force i to be defined in case the range below is nothing,
               # so the last "if" works out. Because Python
-        for i in range(0, ndarr.shape[-1] - window_size - stride + 1, stride): 
+        for i in range(0, ndarr.shape[-1] - window_size - stride + 1, stride):
             yield ndarr[:, i:np.minimum(i + window_size, ndarr.shape[-1])]
 
         if i + stride != ndarr.shape[-1]:
@@ -2211,7 +2215,7 @@ def load_iter(file_name: Union[str, list[str]], subindices=None, var_name_hdf5: 
                             frame = rgb2gray(pims_movie[ind])
                             yield frame # was frame[..., 0].astype(outtype)
                         return
-                
+
             elif extension in ('.hdf5', '.h5', '.nwb', '.mat', 'n5', 'zarr'):
                 if extension in ('n5', 'zarr'): # Thankfully, the zarr library lines up closely with h5py past the initial open
                     f = zarr.open(file_name, "r")
@@ -2354,11 +2358,11 @@ def get_file_size(file_name, var_name_hdf5:str='mov') -> tuple[tuple, Union[int,
                 elif info['channels'] == 3:
                     info['nChan'] = 1
                     factor = 2
-            
+
                 # Determine number of frames in whole file
                 T = int(os.path.getsize(
                     file_name[:-4] + '.sbx') / info['recordsPerBuffer'] / info['sz'][1] * factor / 4 - 1)
-                
+
             else:
                 raise Exception('Unknown file type')
             dims = tuple(dims)
@@ -2603,7 +2607,7 @@ def play_movie(movie,
                     if save_movie:
                         if frame.ndim < 3:
                             frame = np.repeat(frame[:, :, None], 3, axis=-1)
-                        frame = frame.astype('u1') 
+                        frame = frame.astype('u1')
                         out.write(frame)
                     if backend == 'opencv' and (cv2.waitKey(int(1. / fr * 1000)) & 0xFF == ord('q')):
                         looping = False
