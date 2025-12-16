@@ -113,14 +113,87 @@ def mrcnn_inference(img, size_range, weights_path, display_result=True):
     import caiman.source_extraction.volpy.mrcnn.model as modellib
     config = neurons.NeuronsConfig()
     class InferenceConfig(config.__class__):
-        # Run detection on one img at a time
+        
+        """Configuration for training on the nucleus segmentation dataset."""
+        # Give the configuration a recognizable name
+        NAME = "neuron"
         GPU_COUNT = 1
+        # Adjust depending on your GPU memory
         IMAGES_PER_GPU = 1
-        DETECTION_MIN_CONFIDENCE = 0.7
-        IMAGE_RESIZE_MODE = "pad64"
+
+        # Number of classes (including background)
+        NUM_CLASSES = 1 + 1  # Background + nucleus
+
+        # Don't exclude based on confidence. Since we have two classes
+        # then 0.5 is the minimum anyway as it picks between nucleus and BG
+        DETECTION_MIN_CONFIDENCE = 0
+
+        # Backbone network architecture
+        # Supported values are: resnet50, resnet101
+        BACKBONE = "resnet50"
+
+        # Input image resizing
+        # Random crops of size 512x512
+        IMAGE_RESIZE_MODE = "crop"
+        IMAGE_MIN_DIM = 512
         IMAGE_MAX_DIM = 512
+        #IMAGE_MIN_SCALE = 2.0
+        #IMAGE_RESIZE_MODE = "none"
+
+
+        # Length of square anchor side in pixels
+        RPN_ANCHOR_SCALES = (8, 16, 32)
+        # (8, 16, 32, 64, 128)
+
+        # ROIs kept after non-maximum supression (training and inference)
+        POST_NMS_ROIS_TRAINING = 1000
+        POST_NMS_ROIS_INFERENCE = 2000
+
+        # Non-max suppression threshold to filter RPN proposals.
+        # You can increase this during training to generate more propsals.
         RPN_NMS_THRESHOLD = 0.7
-        POST_NMS_ROIS_INFERENCE = 1000
+
+        # How many anchors per image to use for RPN training
+        RPN_TRAIN_ANCHORS_PER_IMAGE = 64 #64
+
+        RPN_ANCHOR_STRIDE = 1 #2
+
+        # Image mean (RGB)
+        MEAN_PIXEL = MEAN_PIXEL = np.array([91.11, 91.11, 86.76])
+                #np.array([43.53, 39.56, 48.22])
+                #MEAN_PIXEL = np.array([95.09, 95.09, 86.55])   
+
+        # If enabled, resizes instance masks to a smaller size to reduce
+        # memory load. Recommended when using high-resolution images.
+        USE_MINI_MASK = False #True
+        #MINI_MASK_SHAPE = (16,16) #(56, 56)  # (height, width) of the mini-mask
+
+        # Number of ROIs per image to feed to classifier/mask heads
+        # The Mask RCNN paper uses 512 but often the RPN doesn't generate
+        # enough positive proposals to fill this and keep a positive:negative
+        # ratio of 1:3. You can increase the number of proposals by adjusting
+        # the RPN NMS threshold.
+        TRAIN_ROIS_PER_IMAGE = 100 #128
+
+        # Percent of positive ROIs used to train classifier/mask heads
+        ROI_POSITIVE_RATIO = 0.3 #1
+        # Maximum number of ground truth instances to use in one image
+        MAX_GT_INSTANCES = 200
+
+        # Max number of final detections per image
+        DETECTION_MAX_INSTANCES = 200 #400        
+        # Run detection on one img at a time
+        # GPU_COUNT = 1
+        # IMAGES_PER_GPU = 1
+        # DETECTION_MIN_CONFIDENCE = 0.7
+        # IMAGE_RESIZE_MODE = "pad64"
+        # IMAGE_MAX_DIM = 512
+        # RPN_NMS_THRESHOLD = 0.7
+        # POST_NMS_ROIS_INFERENCE = 1000
+        #ADDED THESE TO FIX?
+        STEPS_PER_EPOCH = 163       # <-- Critical fix
+        VALIDATION_STEPS = 1       # (matches working)
+        RPN_ANCHOR_SCALES = (8, 16, 32, 1, 1)  # <-- Critical fix
     config = InferenceConfig()
     config.display()
     model_dir = os.path.join(caiman_datadir(), 'model')
@@ -131,20 +204,57 @@ def mrcnn_inference(img, size_range, weights_path, display_result=True):
     tf.keras.Model.load_weights(model.keras_model, weights_path, by_name=True)
     results = model.detect([img], verbose=1)
     r = results[0]
-    selection = np.logical_and(r['masks'].sum(axis=(0,1)) > size_range[0] ** 2, 
-                               r['masks'].sum(axis=(0,1)) < size_range[1] ** 2)
-    r['rois'] = r['rois'][selection]
-    r['masks'] = r['masks'][:, :, selection]
-    r['class_ids'] = r['class_ids'][selection]
-    r['scores'] = r['scores'][selection]
-    ROIs = r['masks'].transpose([2, 0, 1])
 
-    if display_result:
-        _, ax = plt.subplots(1,1, figsize=(16,16))
-        visualize.display_instances(img, r['rois'], r['masks'], r['class_ids'], 
-                                ['BG', 'neurons'], r['scores'], ax=ax,
-                                title="Predictions")        
-    return ROIs, r
+    # Encode image to RLE
+    #image_id = "image_1"       # <-- any string identifier you want
+    #rle = mask_to_rle(image_id, r["masks"], r["scores"])
+    #submission.append(rle)
+
+
+    # Create a figure
+    fig, ax = plt.subplots(1, figsize=(16, 16), dpi=200)
+
+    visualize.display_instances(
+        img,                       # <-- use `img`, not `image`
+        r['rois'],
+        r['masks'],
+        r['class_ids'],
+        r['scores'],
+        show_bbox=True,
+        show_mask=True,
+        title="Predictions",
+        ax=ax
+    )
+
+    plt.show()
+    print("MADE FIGURE")
+
+    return r
+
+
+
+
+
+
+
+
+
+
+
+    # selection = np.logical_and(r['masks'].sum(axis=(0,1)) > size_range[0] ** 2, 
+    #                            r['masks'].sum(axis=(0,1)) < size_range[1] ** 2)
+    # r['rois'] = r['rois'][selection]
+    # r['masks'] = r['masks'][:, :, selection]
+    # r['class_ids'] = r['class_ids'][selection]
+    # r['scores'] = r['scores'][selection]
+    # ROIs = r['masks'].transpose([2, 0, 1])
+
+    # if display_result:
+    #     _, ax = plt.subplots(1,1, figsize=(16,16))
+    #     visualize.display_instances(img, r['rois'], r['masks'], r['class_ids'], 
+    #                             ['BG', 'neurons'], r['scores'], ax=ax,
+    #                             title="Predictions")        
+    # return ROIs, r
 
 def reconstructed_movie(estimates, fnames, idx, scope, flip_signal):
     """ Create reconstructed movie in VolPy. The movie has three panels: 
@@ -277,4 +387,66 @@ def view_components(estimates, img, idx, frame_times=None, gt_times=None):
     s_comp.set_val(0)
     fig.canvas.mpl_connect('key_release_event', arrow_key_image_control)
     plt.show()
+
+
+############################################################
+#  RLE Encoding
+############################################################
+
+def rle_encode(mask):
+    """Encodes a mask in Run Length Encoding (RLE).
+    Returns a string of space-separated values.
+    """
+    assert mask.ndim == 2, "Mask must be of shape [Height, Width]"
+    # Flatten it column wise
+    m = mask.T.flatten()
+    # Compute gradient. Equals 1 or -1 at transition points
+    g = np.diff(np.concatenate([[0], m, [0]]), n=1)
+    # 1-based indicies of transition points (where gradient != 0)
+    rle = np.where(g != 0)[0].reshape([-1, 2]) + 1
+    # Convert second index in each pair to lenth
+    rle[:, 1] = rle[:, 1] - rle[:, 0]
+    return " ".join(map(str, rle.flatten()))
+
+
+def rle_decode(rle, shape):
+    """Decodes an RLE encoded list of space separated
+    numbers and returns a binary mask."""
+    rle = list(map(int, rle.split()))
+    rle = np.array(rle, dtype=np.int32).reshape([-1, 2])
+    rle[:, 1] += rle[:, 0]
+    rle -= 1
+    mask = np.zeros([shape[0] * shape[1]], np.bool)
+    for s, e in rle:
+        assert 0 <= s < mask.shape[0]
+        assert 1 <= e <= mask.shape[0], "shape: {}  s {}  e {}".format(shape, s, e)
+        mask[s:e] = 1
+    # Reshape and transpose
+    mask = mask.reshape([shape[1], shape[0]]).T
+    return mask
+
+
+def mask_to_rle(image_id, mask, scores):
+    """Encode instance masks to submission-format RLE."""
+    assert mask.ndim == 3, "Mask must be [H, W, count]"
+
+    if mask.shape[-1] == 0:
+        return f"{image_id},"
+
+    # Order instances by score (highest first)
+    order = np.argsort(scores)[::-1] + 1
+    mask = np.max(mask * order.reshape([1, 1, -1]), axis=-1)
+
+    lines = []
+    for o in order:
+        m = (mask == o).astype(np.uint8)
+        if m.sum() == 0:
+            continue
+        rle = rle_encode(m)
+        lines.append(f"{image_id}, {rle}")
+
+    return "\n".join(lines)
+
+
+
     

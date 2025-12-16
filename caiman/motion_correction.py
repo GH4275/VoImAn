@@ -3124,10 +3124,15 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
         base_name = caiman.paths.fn_relocated(base_name)
 
         fname_tot:Optional[str] = caiman.paths.memmap_frames_filename(base_name, dims, T, order)
+        output_dir = "R:/"
         if isinstance(fname, tuple):
-            fname_tot = os.path.join(os.path.split(fname[0])[0], fname_tot)
+            #fname_tot = os.path.join(os.path.split(fname[0])[0], fname_tot)
+            fname_tot = os.path.join(output_dir, fname_tot)
+            print("Saved mmap to: ", fname_tot)
         else:
-            fname_tot = os.path.join(os.path.split(fname)[0], fname_tot)
+            #fname_tot = os.path.join(os.path.split(fname)[0], fname_tot)
+            fname_tot = os.path.join(output_dir, fname_tot)
+            print("Saved mmap to: ", fname_tot)
 
         np.memmap(fname_tot, mode='w+', dtype=np.float32,
                   shape=caiman.mmapping.prepare_shape(shape_mov), order=order)

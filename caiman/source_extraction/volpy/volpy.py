@@ -120,15 +120,44 @@ class VOLPY(object):
         """Run the volspike function to detect spikes and save the result
         into self.estimates
         """
+        print("Starting VOLPY spike detection...")
+
         results = []
         fnames = self.params.data['fnames']
         fr = self.params.data['fr']
+        #context_size = 35
 
         if self.params.volspike['method'] == 'spikepursuit':
             volspike = spikepursuit.volspike
         elif self.params.volspike['method'] == 'atm':
             volspike = atm.volspike    
    
+        # if isinstance(fnames, np.ndarray):
+        #     if fnames.ndim == 3:
+        #         # Already (T, height, width)
+        #         T, d1, d2 = fnames.shape
+        #         d3 = 1
+        #         dims = (d1, d2)
+        #         images = fnames  # already in correct shape
+        #         Yr = fnames.reshape(d1*d2*d3, T, order='F')  # optional, like memmap
+        #     elif fnames.ndim == 2:
+        #         # Already flattened (N_pixels, T)
+        #         N_pixels, T = fnames.shape
+        #         d1 = int(np.sqrt(N_pixels))  # only if square
+        #         d2 = d1
+        #         d3 = 1
+        #         dims = (d1, d2)
+        #         images = fnames.T.reshape(T, d1, d2, order='F')
+        #         Yr = fnames  # keep flattened if needed
+        #     else:
+        #         raise ValueError('Unsupported m_rig shape')
+        # else:
+        #     raise ValueError('m_rig must be a numpy array')
+
+        # from skimage.morphology import dilation
+        # from skimage.morphology import disk
+        # print("Starting to process data into chunks...")
+        
         N = len(self.params.data['index'])
         times = int(np.ceil(N/n_processes))
         for j in range(times):
@@ -140,13 +169,37 @@ class VOLPY(object):
             
             for i in li:
                 idx = self.params.data['index'][i]
+
+                # # extract the context region from the entire movie
+                # bwexp = dilation(idx, np.ones([context_size, context_size]), shift_x=True, shift_y=True)
+                # Xinds = np.where(np.any(bwexp > 0, axis=1) > 0)[0]
+                # Yinds = np.where(np.any(bwexp > 0, axis=0) > 0)[0]
+                # bw = bw[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1]
+                # notbw = 1 - dilation(bw, disk(args['censor_size']))
+                # data = np.array(images[:, Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1])
+                # bw = (bw > 0)
+                # notbw = (notbw > 0)
+                # ref = np.median(data[:500, :, :], axis=0)
+                # bwexp[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1] = True
+
                 ROIs = self.params.data['ROIs'][idx]
                 if self.params.data['weights'] is None:
                     weights = None
                 else:
                     weights = self.params.data['weights'][i]
                 args_in.append([fnames, fr, idx, ROIs, weights, self.params.volspike])
+                #args_in.append([fnames, fr, idx, ROIs, weights, T, data, bw, ref, notbw, Yinds, Xinds,   self.params.volspike])
 
+        # if dview is None:
+        #     results_part = []
+        #     for a in tqdm(args_in, desc=f"Processing chunk {j+1}/{times}"):
+        #         results_part.append(volspike(a))
+        # elif 'multiprocessing' in str(type(dview)):
+        #     # optional: only use on Linux/macOS
+        #     results_part = dview.map_async(volspike, args_in).get(4294967)
+        # else:
+        #     results_part = dview.map_sync(volspike, args_in)
+        
             if 'multiprocessing' in str(type(dview)):
                 results_part = dview.map_async(volspike, args_in).get(4294967)
             elif dview is not None:

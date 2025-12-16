@@ -1,7 +1,7 @@
 channels:
 - conda-forge
 dependencies:
-- python <=3.12
+- python == 3.10.8
 - av
 - bokeh >=3.1.1
 - coverage
@@ -17,7 +17,7 @@ dependencies:
 - moviepy
 - mypy
 - nose
-- numpy <2.0.0
+- numpy == 1.26.3
 - numpydoc
 - opencv
 - panel >=1.0.2
@@ -28,8 +28,8 @@ dependencies:
 - pyqtgraph
 - scikit-image >=0.19.0
 - scikit-learn >=1.2
-- scipy >= 1.10.1
-- tensorflow >=2.4.0
+- scipy == 1.11.4
+- tensorflow == 2.10.0
 - tifffile
 - tk
 - tqdm

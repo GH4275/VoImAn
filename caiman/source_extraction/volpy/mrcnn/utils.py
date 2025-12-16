@@ -21,6 +21,7 @@ import skimage.transform
 import urllib.request
 import shutil
 import warnings
+import cv2
 from distutils.version import LooseVersion
 
 # URL from which to download the latest COCO trained weights
@@ -565,14 +566,32 @@ def unmold_mask(mask, bbox, image_shape):
 
     Returns a binary mask with the same size as the original image.
     """
+    # threshold = 0.5
+    # y1, x1, y2, x2 = bbox
+    # mask = resize(mask, (y2 - y1, x2 - x1))
+    # mask = np.where(mask >= threshold, 1, 0).astype(bool)
+
+    # # Put the mask in the right location.
+    # full_mask = np.zeros(image_shape[:2], dtype=bool)
+    # full_mask[y1:y2, x1:x2] = mask
+    # return full_mask
+
     threshold = 0.5
     y1, x1, y2, x2 = bbox
-    mask = resize(mask, (y2 - y1, x2 - x1))
-    mask = np.where(mask >= threshold, 1, 0).astype(bool)
-
+    # print(y1, x1, y2, x2)
+    # print(mask.shape) 
+    # print(mask)
+    #mask = resize(mask, (y2 - y1, x2 - x1))
+    resized_mask = cv2.resize(mask, ((x2 - x1), (y2 - y1)), interpolation=cv2.INTER_LINEAR)
+    # print(resized_mask.shape) 
+    # print(resized_mask)
+    mask2 = np.where(resized_mask >= threshold, 1, 0).astype(np.bool_)
+    # print(mask2.shape) 
+    # print(mask2)
     # Put the mask in the right location.
-    full_mask = np.zeros(image_shape[:2], dtype=bool)
-    full_mask[y1:y2, x1:x2] = mask
+    full_mask = np.zeros(image_shape[:2], dtype=np.bool_)
+    full_mask[y1:y2, x1:x2] = mask2
+    # print(full_mask)
     return full_mask
 
 

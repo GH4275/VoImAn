@@ -173,10 +173,19 @@ def volspike(pars):
     """
     # load parameters
     fnames = pars[0]
+    #file = pars[0]
     fr = pars[1]
     cell_n = pars[2]
     bw = pars[3]    
     weights_init = pars[4]    
+    # T = pars[5]
+    # data = pars[6]  
+    # bw = pars[7]
+    # ref = pars[8]
+    # notbw = pars[9]
+    # Yinds = pars[10]
+    # Xinds = pars[11]
+    # args = pars[12]
     args = pars[5]
     window_length = int(fr * args['template_size']) # half window length for spike templates
     output = {}
@@ -189,6 +198,29 @@ def volspike(pars):
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
     else:
         raise Exception('Dimensions of movie and ROIs do not accord')
+    
+    # m_rig: either (T, height, width) or (N_pixels, T) flattened
+    # if isinstance(file, np.ndarray):
+    #     if file.ndim == 3:
+    #         # Already (T, height, width)
+    #         T, d1, d2 = file.shape
+    #         d3 = 1
+    #         dims = (d1, d2)
+    #         images = file  # already in correct shape
+    #         Yr = file.reshape(d1*d2*d3, T, order='F')  # optional, like memmap
+    #     elif file.ndim == 2:
+    #         # Already flattened (N_pixels, T)
+    #         N_pixels, T = file.shape
+    #         d1 = int(np.sqrt(N_pixels))  # only if square
+    #         d2 = d1
+    #         d3 = 1
+    #         dims = (d1, d2)
+    #         images = file.T.reshape(T, d1, d2, order='F')
+    #         Yr = file  # keep flattened if needed
+    #     else:
+    #         raise ValueError('Unsupported m_rig shape')
+    # else:
+    #     raise ValueError('m_rig must be a numpy array')
         
     # extract the context region from the entire movie
     bwexp = dilation(bw, np.ones([args['context_size'], args['context_size']]), shift_x=True, shift_y=True)

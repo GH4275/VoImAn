@@ -737,9 +737,67 @@ def local_correlations_movie_offline(file_name,
     return mm
 
 
+def local_correlations_movie_in_memory(file,
+                                        Tot_frames=None,
+                                        fr: float = 10.,
+                                        window: int = 100,
+                                        stride: int = 100,
+                                        swap_dim: bool = False,
+                                        eight_neighbours: bool = True,
+                                        order_mean: int = 1,
+                                        ismulticolor: bool = False,
+                                        dview=None,
+                                        remove_baseline: bool = False,
+                                        winSize_baseline: int = 50,
+                                        quantil_min_baseline: float = 8,
+                                        gaussian_blur: bool=False):
+
+    print("Using in-memory version of local_correlations_movie, no parallelization")
+    if Tot_frames is None:
+    #    _, Tot_frames = caiman.base.movies.get_file_size(file_name)
+        Tot_frames = file.shape[0]
+
+    params:list = [[file, range(j, j + window), eight_neighbours, swap_dim,
+                        order_mean, ismulticolor, remove_baseline, winSize_baseline,
+                        quantil_min_baseline, gaussian_blur]
+                    for j in range(0, Tot_frames - window, stride)]
+
+    params.append([file, range(Tot_frames - window, Tot_frames), eight_neighbours, swap_dim,
+                    order_mean, ismulticolor, remove_baseline, winSize_baseline,
+                    quantil_min_baseline, gaussian_blur])
+
+    # if dview is None:
+    #     parallel_result = list(map(local_correlations_movie_parallel, params))
+    # else:
+    #     #TODO phrase better
+    #     if 'multiprocessing' in str(type(dview)):
+    #         parallel_result = dview.map_async(local_correlations_movie_parallel, params).get(4294967)
+    
+    #     else:
+    #         parallel_result = dview.map_sync(local_correlations_movie_parallel, params)
+    #         dview.results.clear()
+
+    #Always run single-threaded to avoid WinError 87
+    parallel_result = list(map(local_correlations_movie_parallel, params))
+    # from tqdm import tqdm
+
+    # parallel_result = [local_correlations_movie_parallel(p) for p in tqdm(params, desc="Computing local correlations")]
+
+
+    mm = caiman.movie(np.concatenate(parallel_result, axis=0), fr=fr/len(parallel_result))
+    return mm
+
+
+
+
 def local_correlations_movie_parallel(params:tuple) -> np.ndarray:
     mv_name, idx, eight_neighbours, swap_dim, order_mean, ismulticolor, remove_baseline, winSize_baseline, quantil_min_baseline, gaussian_blur = params
-    mv = caiman.load(mv_name, subindices=idx, in_memory=True)
+    #mv = caiman.load(mv_name, subindices=idx, in_memory=True)
+    if isinstance(mv_name, str):
+        mv = caiman.load(mv_name, subindices=idx, in_memory=True)
+    else:
+        mv = mv_name #new line for in-memory processing
+
     if gaussian_blur:
         mv = mv.gaussian_blur_2D()
 
