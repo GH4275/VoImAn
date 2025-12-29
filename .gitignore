@@ -193,3 +193,4 @@ $RECYCLE.BIN/
 
 # End of https://www.gitignore.io/api/macos,python,windows
 caiman/source_extraction/cnmf/oasis.cpp
+caiman/ICNLAB/mask_rcnn_neuron_0012.h5
