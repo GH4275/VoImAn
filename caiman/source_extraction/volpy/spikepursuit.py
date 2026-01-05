@@ -277,148 +277,212 @@ def volspike(pars):
                                           pnorm=args['pnorm'], threshold=args['threshold'], 
                                           min_spikes=args['min_spikes'], do_plot=False)
 
-    output['rawROI']['t'] = t0.copy()
-    output['rawROI']['ts'] = ts.copy()
-    output['rawROI']['spikes'] = spikes.copy()
-    if weights_init is None:
-        output['rawROI']['weights'] = bw.copy()
-    else:
-        output['rawROI']['weights'] = weights_init.copy()
-    output['rawROI']['t'] = output['rawROI']['t'] * np.mean(t0[output['rawROI']['spikes']]) / np.mean(
-        output['rawROI']['t'][output['rawROI']['spikes']])  # correct shrinkage
-    output['rawROI']['templates'] = templates
-    num_spikes = [spikes.shape[0]]
-
-    # prebuild the regression matrix generate a predictor for ridge regression
-    pred = np.empty_like(data_hp)
-    pred[:] = data_hp
-    pred = np.hstack((np.ones((data_hp.shape[0], 1), dtype=np.single), np.reshape
-    (movie.gaussian_blur_2D(np.reshape(pred,
-                                       (data_hp.shape[0], ref.shape[0], ref.shape[1])),
-                            kernel_size_x=7, kernel_size_y=7, kernel_std_x=1.5,
-                            kernel_std_y=1.5, borderType=cv2.BORDER_REPLICATE), data_hp.shape)))
-
-    # cross-validation of regularized regression parameters
-    lambdamax = np.single(np.linalg.norm(pred[:, 1:], ord='fro') ** 2)
-    lambdas = lambdamax * np.logspace(-4, -2, 3)
-    
-    if args['do_cross_val']:
-        # need to add
-        logging.warning('doing cross validation')
-        raise Exception('cross validation option is not available yet')
-    else:
-        s_max = 1
-        l_max = 2
-        sigma = args['sigmas'][s_max]
-    
-    recon = np.empty_like(data_hp)
-    recon[:] = data_hp
-    recon = np.hstack((np.ones((data_hp.shape[0], 1), dtype=np.single), np.reshape
-    (movie.gaussian_blur_2D(np.reshape(recon,
-                                       (data_hp.shape[0], ref.shape[0], ref.shape[1])),
-                            kernel_size_x=int(2 * np.ceil(2 * sigma) + 1),
-                            kernel_size_y=int(2 * np.ceil(2 * sigma) + 1),
-                            kernel_std_x=sigma, kernel_std_y=sigma,
-                            borderType=cv2.BORDER_REPLICATE), data_hp.shape)))
-
-    # refine weights and estimate spike times for several iterations 
-    for iteration in range(args['n_iter']):
-        if iteration == args['n_iter'] - 1:
-            do_plot = args['do_plot']
+    print("checkpoint 1: initial spike detection done with %d spikes detected" % (spikes.shape[0]))
+    if spikes.shape[0] != 0:
+        #----- SPIKE DETECTION CASE -----
+        output['rawROI']['t'] = t0.copy()
+        output['rawROI']['ts'] = ts.copy()
+        output['rawROI']['spikes'] = spikes.copy()
+        if weights_init is None:
+            output['rawROI']['weights'] = bw.copy()
         else:
-            do_plot = False
-            
-        # update weights
-        tr = np.single(t_rec.copy())
-        if args['weight_update'] == 'NMF':
-            C = np.array([tr, np.ones_like(tr)])  # constant baselines as 2nd component
-            CCt = C.dot(C.T)
-            CY = C.dot(recon[:, 1:])
-            A = np.maximum(np.linalg.inv(CCt).dot(CY), 0)
-            for _ in range(5):
-                for m in range(2):
-                    A[m] += (CY[m] - CCt[m].dot(A)) / CCt[m, m]
-                    if m == 0:
-                        A[m] = np.maximum(A[m], 0)
-            weights = np.concatenate([[0], A[0]])
-        elif args['weight_update'] == 'ridge':
-            Ri = Ridge(alpha=lambdas[l_max], fit_intercept=True, solver='lsqr')
-            Ri.fit(recon, tr)
-            weights = Ri.coef_
-            weights[0] = Ri.intercept_
+            output['rawROI']['weights'] = weights_init.copy()
+        output['rawROI']['t'] = output['rawROI']['t'] * np.mean(t0[output['rawROI']['spikes']]) / np.mean(
+            output['rawROI']['t'][output['rawROI']['spikes']])  # correct shrinkage
+        output['rawROI']['templates'] = templates
+        num_spikes = [spikes.shape[0]]
 
-        # update the signal            
-        t = np.matmul(recon, weights)
-        t = t - np.mean(t)
+        # prebuild the regression matrix generate a predictor for ridge regression
+        pred = np.empty_like(data_hp)
+        pred[:] = data_hp
+        pred = np.hstack((np.ones((data_hp.shape[0], 1), dtype=np.single), np.reshape
+        (movie.gaussian_blur_2D(np.reshape(pred,
+                                        (data_hp.shape[0], ref.shape[0], ref.shape[1])),
+                                kernel_size_x=7, kernel_size_y=7, kernel_std_x=1.5,
+                                kernel_std_y=1.5, borderType=cv2.BORDER_REPLICATE), data_hp.shape)))
 
-        # ridge regression to remove background components
-        b = Ridge(alpha=alpha, fit_intercept=False, solver='lsqr').fit(Ub, t).coef_
-        t = t - np.matmul(Ub, b)
+        # cross-validation of regularized regression parameters
+        lambdamax = np.single(np.linalg.norm(pred[:, 1:], ord='fro') ** 2)
+        lambdas = lambdamax * np.logspace(-4, -2, 3)
+        
+        if args['do_cross_val']:
+            # need to add
+            logging.warning('doing cross validation')
+            raise Exception('cross validation option is not available yet')
+        else:
+            s_max = 1
+            l_max = 2
+            sigma = args['sigmas'][s_max]
+        
+        recon = np.empty_like(data_hp)
+        recon[:] = data_hp
+        recon = np.hstack((np.ones((data_hp.shape[0], 1), dtype=np.single), np.reshape
+        (movie.gaussian_blur_2D(np.reshape(recon,
+                                        (data_hp.shape[0], ref.shape[0], ref.shape[1])),
+                                kernel_size_x=int(2 * np.ceil(2 * sigma) + 1),
+                                kernel_size_y=int(2 * np.ceil(2 * sigma) + 1),
+                                kernel_std_x=sigma, kernel_std_y=sigma,
+                                borderType=cv2.BORDER_REPLICATE), data_hp.shape)))
 
-        # correct shrinkage
-        weights = weights * np.mean(t0[spikes]) / np.mean(t[spikes])
-        t = np.double(t * np.mean(t0[spikes]) / np.mean(t[spikes]))
+        # refine weights and estimate spike times for several iterations 
+        for iteration in range(args['n_iter']):
+            if iteration == args['n_iter'] - 1:
+                do_plot = args['do_plot']
+            else:
+                do_plot = False
+                
+            # update weights
+            tr = np.single(t_rec.copy())
+            if args['weight_update'] == 'NMF':
+                C = np.array([tr, np.ones_like(tr)])  # constant baselines as 2nd component
+                CCt = C.dot(C.T)
+                CY = C.dot(recon[:, 1:])
+                A = np.maximum(np.linalg.inv(CCt).dot(CY), 0)
+                for _ in range(5):
+                    for m in range(2):
+                        A[m] += (CY[m] - CCt[m].dot(A)) / CCt[m, m]
+                        if m == 0:
+                            A[m] = np.maximum(A[m], 0)
+                weights = np.concatenate([[0], A[0]])
+            elif args['weight_update'] == 'ridge':
+                Ri = Ridge(alpha=lambdas[l_max], fit_intercept=True, solver='lsqr')
+                Ri.fit(recon, tr)
+                weights = Ri.coef_
+                weights[0] = Ri.intercept_
 
-        # estimate spike times
-        ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t,
-                    window_length, fr,  hp_freq=args['hp_freq'], clip=args['clip'],
-                    threshold_method=args['threshold_method'], pnorm=args['pnorm'], 
-                    threshold=args['threshold'], min_spikes=args['min_spikes'], do_plot=do_plot)
-    
-        num_spikes.append(spikes.shape[0])
+            # update the signal            
+            t = np.matmul(recon, weights)
+            t = t - np.mean(t)
 
-    # compute SNR 
-    if len(spikes)>0:
-        t = t - np.median(t)
-        selectSpikes = np.zeros(t.shape)
-        selectSpikes[spikes] = 1
-        sgn = np.mean(t[selectSpikes > 0])
-        ff1 = -t * (t < 0)
-        Ns = np.sum(ff1 > 0)
-        noise = np.sqrt(np.divide(np.sum(ff1**2), Ns)) 
-        snr = sgn / noise
+            # ridge regression to remove background components
+            b = Ridge(alpha=alpha, fit_intercept=False, solver='lsqr').fit(Ub, t).coef_
+            t = t - np.matmul(Ub, b)
+
+            # correct shrinkage
+            weights = weights * np.mean(t0[spikes]) / np.mean(t[spikes])
+            t = np.double(t * np.mean(t0[spikes]) / np.mean(t[spikes]))
+
+            # estimate spike times
+            ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t,
+                        window_length, fr,  hp_freq=args['hp_freq'], clip=args['clip'],
+                        threshold_method=args['threshold_method'], pnorm=args['pnorm'], 
+                        threshold=args['threshold'], min_spikes=args['min_spikes'], do_plot=do_plot)
+        
+            num_spikes.append(spikes.shape[0])
+            print("iteration %d done with %d spikes detected" % (iteration + 1, spikes.shape[0]))
+            if spikes.shape[0] == 0:
+                break
+
+        print('Final number of spikes detected: %d' % (spikes.shape[0]))
+        # compute SNR 
+        if len(spikes)>0:
+            t = t - np.median(t)
+            selectSpikes = np.zeros(t.shape)
+            selectSpikes[spikes] = 1
+            sgn = np.mean(t[selectSpikes > 0])
+            ff1 = -t * (t < 0)
+            Ns = np.sum(ff1 > 0)
+            noise = np.sqrt(np.divide(np.sum(ff1**2), Ns)) 
+            snr = sgn / noise
+        else:
+            snr = 0
+
+        # locality test       
+        matrix = np.matmul(np.transpose(pred[:, 1:]), t_rec)
+        sigmax = np.sqrt(np.sum(np.multiply(pred[:, 1:], pred[:, 1:]), axis=0))
+        sigmay = np.sqrt(np.dot(t_rec, t_rec))
+        IMcorr = matrix / sigmax / sigmay
+        maxCorrInROI = np.max(IMcorr[bw.ravel()])
+        if np.any(IMcorr[notbw.ravel()] > maxCorrInROI):
+            locality = False
+        else:
+            locality = True
+        
+        # weights in the FOV
+        weights = np.reshape(weights[1:],ref.shape, order='C')
+        weights_FOV = np.zeros(images.shape[1:])
+        weights_FOV[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1] = weights
+
+        # subthreshold activity extraction    
+        t_sub = t.copy() - t_rec
+        t_sub = signal_filter(t_sub, args['sub_freq'], fr, order=5, mode='low') 
+
+        # output
+        output['cell_n'] = cell_n
+        output['t'] = t
+        output['ts'] = ts
+        output['t_rec'] = t_rec        
+        output['t_sub'] = t_sub
+        output['spikes'] = spikes
+        output['low_spikes'] = low_spikes
+        output['num_spikes'] = num_spikes
+        output['templates'] = templates
+        output['snr'] = snr
+        output['thresh'] = thresh
+        output['weights'] = weights_FOV
+        output['locality'] = locality    
+        output['context_coord'] = np.transpose(np.vstack((Xinds[[0, -1]], Yinds[[0, -1]])))
+        output['F0'] = np.abs(np.nanmean(data_lp[:, bw.flatten()] + output['mean_im'][bw][np.newaxis, :], 1))
+        output['dFF'] = t / output['F0']
+        output['rawROI']['dFF'] = output['rawROI']['t'] / output['F0']
+        output['polarity'] = polarity
     else:
+        # ----- NO SPIKES CASE -----
+        logging.info(f'Cell {cell_n}: no spikes detected after filtering')
+
+        output['rawROI']['t'] = t0.copy()
+        output['rawROI']['ts'] = ts.copy()
+        output['rawROI']['spikes'] = spikes.copy()
+        if weights_init is None:
+            output['rawROI']['weights'] = bw.copy()
+        else:
+            output['rawROI']['weights'] = weights_init.copy()
+        output['rawROI']['t'] = output['rawROI']['t']
+        output['rawROI']['templates'] = templates
+        num_spikes = [spikes.shape[0]]
+
+        # define signal quantities safely
+        t = t0.copy()
+        t_rec = np.zeros_like(t)
+        ts = ts  # already returned by denoise_spikes
+        t_sub = signal_filter(t, args['sub_freq'], fr, order=5, mode='low')
+
+        # weights: fall back to initial ROI
+        if weights_init is None:
+            weights_FOV = np.zeros(images.shape[1:])
+            weights_FOV[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1] = bw
+        else:
+            weights_FOV = np.zeros(images.shape[1:])
+            weights_FOV[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1] = weights_init
+
+        # no spikes → no SNR or locality
         snr = 0
-
-    # locality test       
-    matrix = np.matmul(np.transpose(pred[:, 1:]), t_rec)
-    sigmax = np.sqrt(np.sum(np.multiply(pred[:, 1:], pred[:, 1:]), axis=0))
-    sigmay = np.sqrt(np.dot(t_rec, t_rec))
-    IMcorr = matrix / sigmax / sigmay
-    maxCorrInROI = np.max(IMcorr[bw.ravel()])
-    if np.any(IMcorr[notbw.ravel()] > maxCorrInROI):
         locality = False
-    else:
-        locality = True
-    
-    # weights in the FOV
-    weights = np.reshape(weights[1:],ref.shape, order='C')
-    weights_FOV = np.zeros(images.shape[1:])
-    weights_FOV[Xinds[0]:Xinds[-1] + 1, Yinds[0]:Yinds[-1] + 1] = weights
 
-    # subthreshold activity extraction    
-    t_sub = t.copy() - t_rec
-    t_sub = signal_filter(t_sub, args['sub_freq'], fr, order=5, mode='low') 
+        # output
+        output['cell_n'] = cell_n
+        output['t'] = t
+        output['ts'] = ts
+        output['t_rec'] = t_rec
+        output['t_sub'] = t_sub
+        output['spikes'] = spikes
+        output['low_spikes'] = True
+        output['num_spikes'] = num_spikes
+        output['templates'] = templates
+        output['snr'] = snr
+        output['thresh'] = thresh
+        output['weights'] = weights_FOV
+        output['locality'] = locality
+        output['context_coord'] = np.transpose(np.vstack((Xinds[[0, -1]], Yinds[[0, -1]])))
 
-    # output
-    output['cell_n'] = cell_n
-    output['t'] = t
-    output['ts'] = ts
-    output['t_rec'] = t_rec        
-    output['t_sub'] = t_sub
-    output['spikes'] = spikes
-    output['low_spikes'] = low_spikes
-    output['num_spikes'] = num_spikes
-    output['templates'] = templates
-    output['snr'] = snr
-    output['thresh'] = thresh
-    output['weights'] = weights_FOV
-    output['locality'] = locality    
-    output['context_coord'] = np.transpose(np.vstack((Xinds[[0, -1]], Yinds[[0, -1]])))
-    output['F0'] = np.abs(np.nanmean(data_lp[:, bw.flatten()] + output['mean_im'][bw][np.newaxis, :], 1))
-    output['dFF'] = t / output['F0']
-    output['rawROI']['dFF'] = output['rawROI']['t'] / output['F0']
-    output['polarity'] = polarity
+        output['F0'] = np.abs(
+            np.nanmean(data_lp[:, bw.flatten()] +
+                    output['mean_im'][bw][np.newaxis, :], 1)
+        )
+
+        output['dFF'] = t / output['F0']
+        output['rawROI']['dFF'] = output['rawROI']['t'] / output['F0']
+        output['polarity'] = polarity
 
     return output
 
@@ -511,6 +575,47 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
         logging.warning("Error: threshold_method not found")
         raise Exception('Threshold_method not found!')
 
+
+    #width height filtering
+    window = np.arange(-window_length, window_length + 1)
+    valid = (locs > -window[0]) & (locs < len(data) - window[-1])
+    locs = locs[valid]
+
+    PTD = data[locs[:, None] + window]
+
+    # height = peak amplitude
+    heights = PTD.max(axis=1)
+
+    # width = number of samples above half max
+    def width_halfmax(trace):
+        half = trace.max() / 2
+        above = trace >= half
+        if not np.any(above):
+            return np.inf
+        idx = np.where(above)[0]
+        return idx[-1] - idx[0]
+
+    widths = np.array([width_halfmax(row) for row in PTD])
+    safe_widths = np.where(widths == 0, 1, widths)
+    width_times = safe_widths / fr * 1000 # in ms
+    print(width_times)
+    keep = (widths > 0) & (widths < 6) &((heights / width_times) > 4) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
+    PTD = PTD[keep]
+    locs = locs[keep]
+    print(locs.shape[0], 'spikes remain after width/height filtering')
+    if locs.size == 0:
+        logging.info("No spikes remain after width/height filtering")
+
+        datafilt = data.copy()
+        spikes = np.array([], dtype=int)
+        t_rec = data.copy()
+        templates = np.zeros(2 * window_length + 1)
+        thresh2_normalized = np.nan
+        low_spikes = True
+
+        return datafilt, spikes, t_rec, templates, low_spikes, thresh2_normalized, polarity
+
+
     # spike template
     window = np.int64(np.arange(-window_length, window_length + 1, 1))
     locs = locs[np.logical_and(locs > (-window[0]), locs < (len(data) - window[-1]))]
@@ -523,8 +628,49 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
     datafilt = whitened_matched_filter(data, locs, window)    
     datafilt = datafilt - np.median(datafilt)
 
-    # second round of spike detection on the whitened matched filtered trace
-    pks2 = datafilt[signal.find_peaks(datafilt, height=None)[0]]
+    # # second round of spike detection on the whitened matched filtered trace
+    # pks2 = datafilt[signal.find_peaks(datafilt, height=None)[0]]
+
+    #round two of height/width filtering
+    locs2 = signal.find_peaks(datafilt, height=None)[0]
+    valid2 = (locs2 > -window[0]) & (locs2 < len(datafilt) - window[-1])
+    locs2 = locs2[valid2]
+
+    PTD = data[locs2[:, None] + window]
+
+    # height = peak amplitude
+    heights = PTD.max(axis=1)
+
+    # width = number of samples above half max
+    def width_halfmax(trace):
+        half = trace.max() / 2
+        above = trace >= half
+        if not np.any(above):
+            return np.inf
+        idx = np.where(above)[0]
+        return idx[-1] - idx[0]
+
+    widths = np.array([width_halfmax(row) for row in PTD])
+    safe_widths = np.where(widths == 0, 1, widths)
+    width_times = safe_widths / fr * 1000 # in ms
+    print(width_times)
+    keep = (widths > 0) & (widths < 6) &((heights / width_times) > 4) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
+    PTD = PTD[keep]
+    locs2 = locs2[keep]
+    print(locs2.shape[0], 'spikes remain after width/height filtering')
+    if locs2.size == 0:
+        logging.info("No spikes remain after width/height filtering")
+
+        datafilt = data.copy()
+        spikes = np.array([], dtype=int)
+        t_rec = data.copy()
+        templates = np.zeros(2 * window_length + 1)
+        thresh2_normalized = np.nan
+        low_spikes = True
+
+        return datafilt, spikes, t_rec, templates, low_spikes, thresh2_normalized, polarity
+
+    pks2 = datafilt[locs2]
     if threshold_method == 'adaptive_threshold':
         thresh2, falsePosRate, detectionRate, low_spikes = adaptive_thresh(pks2, clip=0, pnorm=pnorm, min_spikes=min_spikes)  # clip=0 means no clipping
         spikes = signal.find_peaks(datafilt, height=thresh2)[0]
@@ -574,6 +720,7 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
                  linestyle='none')
         plt.show()
 
+        print(low_spikes)
     return datafilt, spikes, t_rec, templates, low_spikes, thresh2_normalized, polarity
 
 def adaptive_thresh(pks, clip, pnorm=0.5, min_spikes=10):
@@ -689,9 +836,12 @@ def simple_thresh(data, pks, clip, threshold=3.5, min_spikes=10):
     thresh = threshold * std
     locs = signal.find_peaks(data, height=thresh)[0]
     if len(locs) < min_spikes:
-        logging.warning(f'Few spikes were detected. Adjusting threshold to take {min_spikes} largest spikes')
-        thresh = np.percentile(pks, 100 * (1 - min_spikes / len(pks)))
         low_spikes = True
+        logging.warning(f'Few spikes were detected. Proceeding anyway since simple threshold is used')
+        print('Few spikes were detected. Proceeding anyway since simple threshold is used')
+    #     logging.warning(f'Few spikes were detected. Adjusting threshold to take {min_spikes} largest spikes')
+    #     thresh = np.percentile(pks, 100 * (1 - min_spikes / len(pks)))
+    #     low_spikes = True
     elif ((len(locs) > clip) & (clip > 0)):
         logging.warning(f'Selecting top {clip} spikes for template')
         thresh = np.percentile(pks, 100 * (1 - clip / len(pks)))    
