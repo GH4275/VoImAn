@@ -54,8 +54,8 @@ def main():
         )
 
     for fov, paths in sorted(fov_groups.items(), key=lambda x: int(x[0])):
-    print(f"Analyzing FOV{fov} with {len(paths)} sessions")
-    analyzeFOV(paths)
+        print(f"Analyzing FOV{fov} with {len(paths)} sessions")
+        analyzeFOV(paths)
 
 
 
@@ -451,6 +451,7 @@ def analyzeFOV(folder_paths):
         #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
         r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
         ROIs = r['masks'].transpose([2, 0, 1])
+        Coords = r['rois']
         cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
 
         fig, axs = plt.subplots(1, 2)
@@ -466,7 +467,7 @@ def analyzeFOV(folder_paths):
         print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
 
         ###NEW SECTION FOR ROI COORDINATE EXTRACTION
-        cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in r["rois"]]
+        cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in Coords]
         cell_centers = np.array(cell_centers)
         print("Cell centers:", cell_centers)    
         #display the cell centers on the image
@@ -551,6 +552,7 @@ def analyzeFOV(folder_paths):
 
         ##
         vpy.estimates['ROIs'] = ROIs
+        vpy.estimates['Coords'] = Coords
         save_name = fname[:-4]+'new_volpy'
         np.save(save_name, vpy.estimates)
 
