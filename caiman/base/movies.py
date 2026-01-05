@@ -1603,10 +1603,16 @@ def load(file_name: Union[str, list[str]],
 
         elif extension == '.mmap':
             filename = os.path.split(file_name)[-1]
+            # print("trying to load mmap file:", filename)
+            # cf = 'C' if '_order_C_' in filename else 'F' if '_order_F_' in filename else None
+            # print("detected order:", cf)
             Yr, dims, T = caiman.mmapping.load_memmap(
                 os.path.join(                  # type: ignore # same dims typing issue as above
                     os.path.split(file_name)[0], filename))
             images = np.reshape(Yr.T, [T] + list(dims), order='F')
+            # images = np.reshape(Yr.T, [T] + list(dims), order=cf)
+            # images = np.rot90(images[:, ::-1, :], -1, axes=(1, 2))
+
             if subindices is not None:
                 images = images[subindices]
 
