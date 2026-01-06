@@ -1,6 +1,7 @@
 import argparse
 import os
 #version 5 integrates new correlation map, also to add help add width/height filtering and cell grid allignments
+#this is v5.py with updated volpy fit changes in 5.3 but without multitrial registration components
 #version 4 of test_single_trial_RAM_DISK.py with updated MATLAB .mat saving (sped up)
 # TO RUN: conda activate caiman
 # # python C:\Users\ICNLab\caiman_data\test_single_trial_RAM_DISK_5.py C:\Users\ICNLab\caiman_data\testdata\testdata\FOV1_T2RAM5\FOV1_T2.tsm
@@ -47,10 +48,13 @@ def main():
             fov_number = match.group(1)  # e.g. "1" from FOV1_T2
             fov_groups[fov_number].append(path)
 
-    # optional: sort each FOV group by T number
+    # sort each FOV group by date and T number
     for fov in fov_groups:
         fov_groups[fov].sort(
-            key=lambda p: int(re.search(r"_T(\d+)$", os.path.basename(p)).group(1))
+            key=lambda p: (
+                int(os.path.basename(os.path.dirname(p))),  # date: 20250505
+                int(re.search(r"_T(\d+)$", os.path.basename(p)).group(1))  # trial number
+            )
         )
 
     for fov, paths in sorted(fov_groups.items(), key=lambda x: int(x[0])):
@@ -226,26 +230,58 @@ def analyzeFOV(folder_paths):
         ds_ratio = 0.2
         print("Done.")
 
+        del m_orig
+        gc.collect()
 
-        ##
+        ##CONVERT ORDER FROM C TO F VIA DATA STREAMING
+        name = Path(mc.mmap_file[0]).name
+
+        Y = int(re.search(r'_d1_(\d+)', name).group(1))
+        X = int(re.search(r'_d2_(\d+)', name).group(1))
+        T = int(re.search(r'_frames_(\d+)', name).group(1))
+
+        shape = (T, Y, X)
+
+
+        src = np.memmap(
+            mc.mmap_file[0],
+            dtype='float32',
+            mode='r+',
+            shape=(T, Y, X),
+            order='C'   # matches physical layout
+        )
+
         print("Saving stabilized movie to RAM-disk...")
         # Path to RAM disk memmap
         p = Path(fname)
         ram_path = Path(r'R:/') / f"{p.stem}_rig__d1_{m_rig.shape[1]}_d2_{m_rig.shape[2]}_d3_1_order_C_frames_{m_rig.shape[0]}.mmap"
-        ram_path = str(ram_path).replace("/", "\\")
+        ram_path = str(ram_path).replace("/", "\\") 
 
-        # Create memmap in RAM-disk with same shape as m_rig
-        mmap_file_rig = np.memmap(ram_path, dtype='float32', mode='w+', shape=m_rig.shape, order='F') #Was C before
+        dst = np.memmap(
+            ram_path,
+            dtype='float32',
+            mode='w+',
+            shape=(T, Y, X),
+            order='F'   # true pixel-wise contiguous time
+        )
 
-        # Copy stabilized movie data into memmap
-        mmap_file_rig[:] = m_rig[:]
+        chunk = 16  # tune this
 
-        # Flush to make sure data is written
-        mmap_file_rig.flush()
+        for t0 in range(0, T, chunk):
+            t1 = min(t0 + chunk, T)
 
-        mmap_list = [mmap_file_rig]
+            block = src[t0:t1]      # small buffer
+            dst[t0:t1] = block     # repacked to F order
 
-        print("Saved stabilized memmap to RAM-disk:", ram_path)
+            # optional but recommended on RAM disk
+            #src[t0:t1] = 0.0       # free backing pages
+            
+        dst.flush()
+        del src, dst
+
+
+
+
 
         ##
 
@@ -493,20 +529,21 @@ def analyzeFOV(folder_paths):
         index = list(range(len(ROIs)))                # index of neurons
         weights = None                                # if None, use ROIs for initialization; to reuse weights check reuse weights block
 
-        template_size = 0.02                          # half size of the window length for spike templates, default is 20 ms
+        template_size = 0.008                         # half size of the window length for spike templates, default is 20 ms
         context_size = 35                             # number of pixels surrounding the ROI to censor from the background PCA
-        visualize_ROI = True                         # whether to visualize the region of interest inside the context region
+        visualize_ROI = False                         # whether to visualize the region of interest inside the context region
         hp_freq_pb = 1 / 3                            # parameter for high-pass filter to remove photobleaching
         clip = 100                                    # maximum number of spikes to form spike template
-        threshold_method = 'adaptive_threshold'       # adaptive_threshold or simple
+        threshold_method = 'simple'                   # adaptive_threshold or simple
         min_spikes= 10                                # minimal spikes to be found
         pnorm = 0.5                                   # a variable deciding the amount of spikes chosen for adaptive threshold method
-        threshold = 2                                 # threshold for finding spikes only used in simple threshold method, Increase the threshold to find less spikes
-        do_plot = True                               # plot detail of spikes, template for the last iteration
+        threshold = 5                                 # threshold for finding spikes only used in simple threshold method, Increase the threshold to find less spikes
+        do_plot = False                               # plot detail of spikes, template for the last iteration
         ridge_bg= 0.05                                # ridge regression regularizer strength for background removement, larger value specifies stronger regularization
         sub_freq = 20                                 # frequency for subthreshold extraction
         weight_update = 'ridge'                       # ridge or NMF for weight update
         n_iter = 2                                    # number of iterations alternating between estimating spike times and spatial filters
+        censor_size = 5                               # size of the censoring region around the ROI
 
         opts_dict={'fnames': ram_path,   #'fnames': fname_new,
                 'ROIs': ROIs,
@@ -525,9 +562,10 @@ def analyzeFOV(folder_paths):
                 'ridge_bg':ridge_bg,
                 'sub_freq': sub_freq,
                 'weight_update': weight_update,
-                'n_iter': n_iter}
+                'n_iter': n_iter,
+                'censor_size': censor_size}
 
-        opts.change_params(params_dict=opts_dict);
+        opts.change_params(params_dict=opts_dict)
 
         vpy = VOLPY(n_processes=n_processes, dview=dview, params=opts)
 
@@ -537,7 +575,7 @@ def analyzeFOV(folder_paths):
         print("Done.")
 
         # Visualize spatial footprints and traces
-        print(np.where(vpy.estimates['locality'])[0])    # neurons that pass locality test
+        #print(np.where(vpy.estimates['locality'])[0])    # neurons that pass locality test
         # idx = np.where(vpy.estimates['locality'] > 0)[0]
         # utils.view_components(vpy.estimates, img_corr, idx)
 
@@ -580,34 +618,57 @@ def analyzeFOV(folder_paths):
 
 
         ##
-        vpy = vpy.estimates
+        vpynew = vpy.estimates
+        #vpynew['spikes'] = np.array(vpynew['spikes'], dtype=object)
+
         try:
-            # %% plotting all traces
-
-            num_frames = np.max(vpy['dFF'].shape)
+            num_frames = np.max(vpynew['dFF'].shape)
             dur = num_frames/640
-            vpy['cellID'] = []
-            vpy['raster'] = np.zeros_like(vpy['dFF'])
-            vpy['firing_rate'] = np.zeros_like(vpy['dFF'])
+            vpynew['snr_over_3'] = []
 
-            for i in range(vpy['dFF'].shape[0]-1):
-                vpy['raster'][i,vpy['spikes'][i]] = 1
-                vpy['firing_rate'][i] = savgol_filter(np.convolve(vpy['raster'][i]*640,np.ones(32)/32,mode='same'),64,1)
+            vpynew['raster'] = np.zeros_like(vpynew['dFF'])
+            vpynew['firing_rate'] = np.zeros_like(vpynew['dFF'])
+            vpynew['unique_trace'] = []
+            vpynew['cell_idxs'] = []
 
-                if np.sqrt(np.var(vpy['templates'][i], ddof=1))>0.5:
-                    vpy['cellID'].append(i)
+            for i in range(vpynew['dFF'].shape[0]-1):
+                vpynew['raster'][i, vpynew['spikes'][i]] = 1
+                vpynew['firing_rate'][i] = savgol_filter(np.convolve(vpynew['raster'][i]*640,np.ones(32)/32,mode='same'),64,1)
 
-            if len(vpy['cellID'])>0:
-                dFF = np.array(vpy['dFF']).astype(float)
+            for i in range(len(vpynew['Cell_IDs'])):
+                vpynew['snr_over_3'].append(vpynew['snr'][i] > 3.0)
+
+            print("Number of neurons with SNR > 3:", np.sum(vpynew['snr_over_3']))
+
+            print(vpynew['Cell_IDs'])
+
+
+            if np.sum(vpynew['snr_over_3']) > 0:
+                to_remove = set()
+                dFF = np.array(vpynew['dFF']).astype(float)
                 R = np.corrcoef(dFF)
-                r = np.array(np.where(np.triu(R,1)>0.7))
-                for i in range(0,r.shape[1]):
-                    if np.max(dFF[r[0][i]]) < np.max(dFF[r[1][i]]):
-                        r[1][i] = r[0][i]
+                idx0, idx1 = np.where(np.triu(R, 1) > 0.9)
+                max_vals = np.max(dFF, axis=1)
+                smaller = np.where(max_vals[idx0] < max_vals[idx1], idx0, idx1)
+                to_remove.update(smaller.tolist())
+                vpynew['unique_trace'] = [True if x not in to_remove else False for x in range(len(vpynew['Cell_IDs']))]
 
-                vpy['cellID'] = [x for x in vpy['cellID'] if x not in r[1]]
+            print(vpynew['unique_trace'])
+            print("There are", np.sum(vpynew['unique_trace']), "unique traces after correlation filtering.")
+            print("And there were ", len(to_remove), "traces removed due to high correlation.")
 
-            cells = np.array(vpy['cellID'])
+            vpynew['cell_idxs'] = []
+            for cell in range(len(vpynew['Cell_IDs'])):
+                if vpynew['snr_over_3'][cell] and vpynew['unique_trace'][cell]:
+                    vpynew['cell_idxs'].append(cell)
+
+            print("Final number of cells after SNR and correlation filtering:", len(vpynew['cell_idxs']))
+            print(vpynew['cell_idxs'])
+            print(len(vpynew['cell_idxs']))
+
+            #make figure
+
+            cells = np.array(vpynew['cell_idxs'])
             time = np.arange(0,dur,1/640)
 
             fig = plt.figure(figsize=(8.0, 11.0), facecolor='w',constrained_layout=True)
@@ -637,7 +698,7 @@ def analyzeFOV(folder_paths):
                 b, a = butter(1, [1.5, 100], fs=640, btype='band')
                 k = 1
                 for i in range(0, len(cells)):
-                    if ''.join(vpy['polarity'][cells[i]]) in 'negative':
+                    if ''.join(vpynew['polarity'][cells[i]]) in 'negative':
                         color = '#9AAB3A'
                         mult = -1
                         neg_cells.append(cells[i])
@@ -645,22 +706,22 @@ def analyzeFOV(folder_paths):
                         color = '#54A0A8'
                         mult = 1
                         pos_cells.append(cells[i])
-                    y = np.array(lfilter(b,a,stats.zscore(np.array(vpy['dFF'][cells[i]] * mult * 100,dtype=np.float32))) + ((k - 1) * 8)).reshape(1,num_frames)
+                    y = np.array(lfilter(b,a,stats.zscore(np.array(vpynew['dFF'][cells[i]] * mult * 100,dtype=np.float32))) + ((k - 1) * 8)).reshape(1,num_frames)
                     ax3.plot(llim+time,y[0,:],color, linewidth=0.3)
-                    ax3.plot(llim+time[vpy['spikes'][cells[i]]],np.max(y)*np.ones(vpy['spikes'][cells[i]].shape[0]),"|",color='firebrick',markersize=2)
+                    ax3.plot(llim+time[vpynew['spikes'][cells[i]]],np.max(y)*np.ones(vpynew['spikes'][cells[i]].shape[0]),"|",color='firebrick',markersize=2)
                     k = k + 1
 
 
                 if len(pos_cells)>0:
-                    mean_fr_pos = np.mean(vpy['firing_rate'][pos_cells,:], axis=0)
-                    sem_pos = stats.sem(np.array(vpy['firing_rate'][pos_cells,:],dtype=np.float32), axis=0)
+                    mean_fr_pos = np.mean(vpynew['firing_rate'][pos_cells,:], axis=0)
+                    sem_pos = stats.sem(np.array(vpynew['firing_rate'][pos_cells,:],dtype=np.float32), axis=0)
                     ax5r.plot(llim+time, np.array(mean_fr_pos,dtype='float32').ravel(), label='Mean firing rate', color='#54A0A8',linewidth=0.3)
                     ax5r.fill_between(llim+time, np.array(mean_fr_pos - sem_pos,dtype='float32').ravel(), np.array(mean_fr_pos + sem_pos,dtype='float32'), color='#54A0A8', alpha=0.3, label='SEM')
                     ax5.set_ylabel('Firing rate (Hz)',color='#54A0A8',fontsize=12)
                     ax5r.tick_params(axis ='y', labelcolor = '#54A0A8')
                 if len(neg_cells)>0:
-                    mean_fr_neg = np.mean(vpy['firing_rate'][neg_cells,:], axis=0)
-                    sem_neg = stats.sem(np.array(vpy['firing_rate'][neg_cells,:],dtype=np.float32), axis=0)
+                    mean_fr_neg = np.mean(vpynew['firing_rate'][neg_cells,:], axis=0)
+                    sem_neg = stats.sem(np.array(vpynew['firing_rate'][neg_cells,:],dtype=np.float32), axis=0)
                     ax5.plot(llim+time, np.array(mean_fr_neg,dtype='float32').ravel(), label='Mean firing rate', color='#9AAB3A',linewidth=0.3)
                     ax5.fill_between(llim+time, np.array(mean_fr_neg - sem_neg,dtype='float32').ravel(), np.array(mean_fr_neg + sem_neg,dtype='float32'), color='#9AAB3A', alpha=0.3, label='SEM')
                     ax5.set_ylabel('Firing rate (Hz)',color='#9AAB3A',fontsize=12)
@@ -722,12 +783,16 @@ def analyzeFOV(folder_paths):
             print("Saved VOLPY figure to:", fname[:-4] + '_volpy.pdf')
 
             print("Saving VOLPY data to MAT file...")
-            vpy['ROIs'] = ROIs
+            vpynew['ROIs'] = ROIs
             #vpy['rect'] = r['rois']
-            vpy['img'] = img
-            del vpy['rawROI']
-            #scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
-            
+            vpynew['img'] = img
+            del vpynew['rawROI']
+            #scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpynew': vpynew}, format='5', do_compression=True)
+
+
+
+
+
             print("Converting data types for fast saving...")
 
             # Keys identified from inspection output that need fixing
@@ -743,19 +808,19 @@ def analyzeFOV(folder_paths):
 
             # Process float conversions
             for key in keys_to_convert_float:
-                if key in vpy and vpy[key].dtype == object:
+                if key in vpynew and vpynew[key].dtype == object:
                     try:
                         # Attempt a direct conversion to float32 (fastest for scientific data)
-                        vpy[key] = np.array(vpy[key], dtype=np.float32)
+                        vpynew[key] = np.array(vpynew[key], dtype=np.float32)
                         print(f"  Converted '{key}' to float32 array.")
                     except ValueError:
                         print(f"  Could not convert '{key}' to standard array dtype. Keeping as object array.")
 
             # Process integer conversions
             for key in keys_to_convert_int:
-                if key in vpy and vpy[key].dtype == object:
+                if key in vpynew and vpynew[key].dtype == object:
                     try:
-                        vpy[key] = np.array(vpy[key], dtype=np.int32)
+                        vpynew[key] = np.array(vpynew[key], dtype=np.int32)
                         print(f"  Converted '{key}' to int32 array.")
                     except ValueError:
                         print(f"  Could not convert '{key}' to int32 array. Keeping as object array.")
@@ -765,34 +830,34 @@ def analyzeFOV(folder_paths):
 
             # Handle 'mean_im', 'cell_n', 'polarity' (irregular shapes/strings)
             for key in ['mean_im', 'cell_n', 'polarity']:
-                if key in vpy and vpy[key].dtype == object:
-                    vpy[key] = np.array(vpy[key], dtype=object) # Ensure they are formally object arrays
+                if key in vpynew and vpynew[key].dtype == object:
+                    vpynew[key] = np.array(vpynew[key], dtype=object) # Ensure they are formally object arrays
 
             # Handle spikes and low_spikes. The try/except handles the 'bool is not iterable' error.
-            if vpy['spikes'].dtype == object:
-                vpy['spikes'] = np.array([list(x) for x in vpy['spikes']], dtype=object)
+            if vpynew['spikes'].dtype == object:
+                vpynew['spikes'] = np.array([list(x) for x in vpynew['spikes']], dtype=object)
                 
-            if vpy['low_spikes'].dtype == object:
+            if vpynew['low_spikes'].dtype == object:
                 try:
                     # This was causing the TypeError because it was actually a boolean array
-                    vpy['low_spikes'] = np.array([list(x) for x in vpy['low_spikes']], dtype=object)
+                    vpynew['low_spikes'] = np.array([list(x) for x in vpynew['low_spikes']], dtype=object)
                 except TypeError:
                     # If it's a bool array, just make sure it's saved as a clean boolean array
-                    vpy['low_spikes'] = np.array(vpy['low_spikes'], dtype=bool) 
+                    vpynew['low_spikes'] = np.array(vpynew['low_spikes'], dtype=bool) 
 
 
             print("Data type conversion complete.")
-            
-            scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
+
+            scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpynew': vpynew}, format='5', do_compression=True)
             print("Saved VOLPY data to:", fname[:-4] + '_volpy.mat')
-            
-            
-            # vpy.estimates['params'] = opts
+
+
+            # vpynew.estimates['params'] = opts
             # save_name = f'volpy_{os.path.split(fnames)[1][:-5]}_{threshold_method}'
-            # np.save(fnames[:-4] + '_volpy.npy', vpy.estimates)
-            
-            del vpy
-            # %% STOP CLUSTER and clean up log files
+            # np.save(fnames[:-4] + '_volpy.npy', vpynew.estimates)
+
+            del vpynew
+            # % STOP CLUSTER and clean up log files
 
             log_files = glob.glob('*_LOG_*')
             for log_file in log_files:
