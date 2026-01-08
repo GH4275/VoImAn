@@ -1,12 +1,14 @@
-import argparse
-import os
 #version 5 integrates new correlation map, also to add help add width/height filtering and cell grid allignments
 #this is v5.py with updated volpy fit changes in 5.3 but without multitrial registration components
 #version 4 of test_single_trial_RAM_DISK.py with updated MATLAB .mat saving (sped up)
 # TO RUN: conda activate caiman
-# # python C:\Users\ICNLab\caiman_data\test_single_trial_RAM_DISK_5.py C:\Users\ICNLab\caiman_data\testdata\testdata\FOV1_T2RAM5\FOV1_T2.tsm
+# # python C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py C:\Users\ICNLab\caiman_data\testdata\testdata\NF107.6B
 
 def main():
+
+    import argparse
+    import os
+    import re
 
     parser = argparse.ArgumentParser()
     parser.add_argument("froot", help="Path to the input movie file")
@@ -65,6 +67,9 @@ def main():
 
 def analyzeFOV(folder_paths):
     print("Importing packages and Initializing...")
+    import matplotlib
+    matplotlib.use("Agg")   # non-interactive, no windows
+    print(matplotlib.get_backend())
     from base64 import b64encode
     import cv2
     import glob
@@ -79,6 +84,7 @@ def analyzeFOV(folder_paths):
     import tensorflow as tf
     from pathlib import Path
     from PIL import Image
+    import re
 
     #import to cover extras from single_trial.py
     import gc
@@ -141,14 +147,17 @@ def analyzeFOV(folder_paths):
         print("Processing file:", fname)
 
     
+        #Create new unique save name
+        unique_save_string = "-".join(fname.parts[-4:-1])
+        rootpath = Path(*fname.parts[:-4])
+        print("Unique save string:", unique_save_string)
+        print("Directory for Analysis Files:", rootpath)
+
 
         ##
         #fname = r'C:\Users\ICNLab\caiman_data\testdata\testdata\FOV1_T2RAM2\FOV1_T2.tsm'
         fr = 640
         print(fname, fr)
-
-        import matplotlib
-        print(matplotlib.get_backend())
 
 
         ##
@@ -277,7 +286,15 @@ def analyzeFOV(folder_paths):
             #src[t0:t1] = 0.0       # free backing pages
             
         dst.flush()
+        
+        if hasattr(src, 'base') and hasattr(src.base, 'close'):
+            src.base.close()
+            
+        if hasattr(dst, 'base') and hasattr(dst.base, 'close'):
+            dst.base.close()
+
         del src, dst
+        gc.collect()
 
 
 
@@ -409,6 +426,12 @@ def analyzeFOV(folder_paths):
             TILE_SIZE, axis=1
         )
 
+        if hasattr(video, 'base') and hasattr(video.base, 'close'):
+            video.base.close()
+
+        del video
+        gc.collect()
+
         # ===============================
         # Visualization
         # ===============================
@@ -421,20 +444,21 @@ def analyzeFOV(folder_paths):
         plt.axis("off")
         plt.tight_layout()
         plt.show()
-        plt.close()
+        plt.close('all')
 
         img_corr = coherence_image
         summary_images = np.stack([img, img, img_corr], axis=0).astype(np.float32)
-        cm.movie(summary_images).save(fname[:-5]+'_summary_images.tif')
+        #cm.movie(summary_images).save(fname[:-5]+'_summary_images.tif')
 
         plt.imshow(summary_images[0], cmap='gray')
         plt.axis('off')
-        plt.savefig(fname[:-4]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
-
+        #plt.savefig(fname[:-4]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
+        plt.close('all') # Save the figure and close the plot   
 
         plt.imshow(summary_images[2], cmap='gray')
         plt.axis('off')
-        plt.savefig(fname[:-4]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
+        #plt.savefig(fname[:-4]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
+        plt.close('all') # Save the figure and close the plot   
         img = summary_images.transpose([1, 2, 0])
 
 
@@ -470,9 +494,9 @@ def analyzeFOV(folder_paths):
         rgb = np.stack([R_norm, R_norm, B_norm], axis=2).astype(np.uint8)
 
         # --------------------------------------------------------------
-        # Save as PNG (MATLAB-compatible pixel data)
+        # Save as PNG/TIF (MATLAB-compatible pixel data)
         # --------------------------------------------------------------
-        outname = fname[:-4] + "_py.png"
+        outname =  rootpath + unique_save_string + ".tif"
         Image.fromarray(rgb).save(outname)
 
         print("Saved:", outname)
@@ -485,22 +509,22 @@ def analyzeFOV(folder_paths):
         weights_path="C:/Users/ICNLab/caiman_data/testdata/testdata/mask_rcnn_neuron_0012.h5"
         #download_model('mask_rcnn')
         #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
-        r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
+        r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
         ROIs = r['masks'].transpose([2, 0, 1])
         Coords = r['rois']
-        cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
+        #cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
 
         fig, axs = plt.subplots(1, 2)
         axs[0].imshow(summary_images[1])
         axs[1].imshow(ROIs.sum(0))
         axs[0].set_title('mean image')
         axs[1].set_title('masks')
-        plt.savefig(fname[:-6] + 'newmrcnn_ROIs.png', format='png', bbox_inches='tight', pad_inches=0)
-
+        #plt.savefig(fname[:-6] + 'newmrcnn_ROIs.png', format='png', bbox_inches='tight', pad_inches=0)
+        plt.close('all')# Save the figure and close the plot   
 
         #save ROIs as npy array
-        np.save(fname[:-4]+'newmrcnn_ROIs.npy', ROIs)
-        print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
+        #np.save(fname[:-4]+'newmrcnn_ROIs.npy', ROIs)
+        #print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
 
         ###NEW SECTION FOR ROI COORDINATE EXTRACTION
         cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in Coords]
@@ -511,14 +535,14 @@ def analyzeFOV(folder_paths):
         ax.imshow(img, cmap='gray') # Display the image
         ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
         ax.set_title('Cell centers')    # Set the title of the plot
-        plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
-        plt.close() # Save the figure and close the plot     
+        #plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
+        plt.close('all') # Save the figure and close the plot     
 
         # Save to a file
-        save_path = fname[:-4] + '_cell_centers.npy'
-        np.save(save_path, cell_centers)
+        #save_path = fname[:-4] + '_cell_centers.npy'
+        #np.save(save_path, cell_centers)
 
-        print(f"Cell centers saved to {save_path}")
+        #print(f"Cell centers saved to {save_path}")
 
         cm.stop_server(dview=dview)
         c, dview, n_processes = cm.cluster.setup_cluster(
@@ -537,18 +561,27 @@ def analyzeFOV(folder_paths):
         threshold_method = 'simple'                   # adaptive_threshold or simple
         min_spikes= 10                                # minimal spikes to be found
         pnorm = 0.5                                   # a variable deciding the amount of spikes chosen for adaptive threshold method
-        threshold = 5                                 # threshold for finding spikes only used in simple threshold method, Increase the threshold to find less spikes
+        threshold = 4                                 # threshold for finding spikes only used in simple threshold method, Increase the threshold to find less spikes
         do_plot = False                               # plot detail of spikes, template for the last iteration
         ridge_bg= 0.05                                # ridge regression regularizer strength for background removement, larger value specifies stronger regularization
         sub_freq = 20                                 # frequency for subthreshold extraction
         weight_update = 'ridge'                       # ridge or NMF for weight update
         n_iter = 2                                    # number of iterations alternating between estimating spike times and spatial filters
         censor_size = 5                               # size of the censoring region around the ROI
+        min_width = 0                                 #minumum half peak-height width in ms
+        max_width = 9                                 #maximum half peak-height width in ms      
+        w_h_ratio = 1                                 #minumum ratio of height in %dF/F over half peak-height width in ms
+                        
+        correl_cutoff = 1
+        snr_thresh_display = 0.00001
 
         opts_dict={'fnames': ram_path,   #'fnames': fname_new,
                 'ROIs': ROIs,
                 'index': index,
                 'weights': weights,
+                'min_width': min_width,
+                'max_width': max_width,
+                'w_h_ratio': w_h_ratio,
                 'template_size': template_size,
                 'context_size': context_size,
                 'visualize_ROI': visualize_ROI,
@@ -591,15 +624,15 @@ def analyzeFOV(folder_paths):
         ##
         vpy.estimates['ROIs'] = ROIs
         vpy.estimates['Coords'] = Coords
-        save_name = fname[:-4]+'new_volpy'
-        np.save(save_name, vpy.estimates)
+        # save_name = fname[:-4]+'_volpy'
+        # np.save(save_name, vpy.estimates)
 
         cm.stop_server(dview=dview)
         log_files = glob.glob('*_LOG_*')
         for log_file in log_files:
             os.remove(log_file)
 
-        print("Saved VOLPY estimates to:", save_name + '.npy')
+        # print("Saved VOLPY estimates to:", save_name + '.npy')
 
 
         print(vpy.estimates.keys())
@@ -611,10 +644,9 @@ def analyzeFOV(folder_paths):
         for key in vpy.estimates.keys():
             print(f"{key}: {len(vpy.estimates[key])}")
 
-        #print number of neurons with snr > 3
-        snr_threshold = 3.0
-        high_snr_neurons = np.sum(vpy.estimates['snr'] > snr_threshold)
-        print(f"Number of neurons with SNR > {snr_threshold}: {high_snr_neurons}")
+        #print number of neurons with snr > snr_thresh_display
+        high_snr_neurons = np.sum(vpy.estimates['snr'] > snr_thresh_display)
+        print(f"Number of neurons with SNR > {snr_thresh_display}: {high_snr_neurons}")
 
 
         ##
@@ -624,7 +656,7 @@ def analyzeFOV(folder_paths):
         try:
             num_frames = np.max(vpynew['dFF'].shape)
             dur = num_frames/640
-            vpynew['snr_over_3'] = []
+            vpynew['snr_over_thresh'] = []
 
             vpynew['raster'] = np.zeros_like(vpynew['dFF'])
             vpynew['firing_rate'] = np.zeros_like(vpynew['dFF'])
@@ -635,31 +667,30 @@ def analyzeFOV(folder_paths):
                 vpynew['raster'][i, vpynew['spikes'][i]] = 1
                 vpynew['firing_rate'][i] = savgol_filter(np.convolve(vpynew['raster'][i]*640,np.ones(32)/32,mode='same'),64,1)
 
-            for i in range(len(vpynew['Cell_IDs'])):
-                vpynew['snr_over_3'].append(vpynew['snr'][i] > 3.0)
+            for i in range(len(vpynew['ROIs'])):
+                vpynew['snr_over_thresh'].append(vpynew['snr'][i] >= snr_thresh_display) #################################################################################################################
+            print("SNR LIST", vpynew['snr'])
+            print("snr_over_thresh", vpynew['snr_over_thresh'])
+            print("Number of neurons with SNR > 0:", np.sum(vpynew['snr_over_thresh']))
 
-            print("Number of neurons with SNR > 3:", np.sum(vpynew['snr_over_3']))
-
-            print(vpynew['Cell_IDs'])
-
-
-            if np.sum(vpynew['snr_over_3']) > 0:
+            if np.sum(vpynew['snr_over_thresh']) > 0:
                 to_remove = set()
                 dFF = np.array(vpynew['dFF']).astype(float)
                 R = np.corrcoef(dFF)
-                idx0, idx1 = np.where(np.triu(R, 1) > 0.9)
+                idx0, idx1 = np.where(np.triu(R, 1) > correl_cutoff) #################################################################################################################
                 max_vals = np.max(dFF, axis=1)
                 smaller = np.where(max_vals[idx0] < max_vals[idx1], idx0, idx1)
                 to_remove.update(smaller.tolist())
-                vpynew['unique_trace'] = [True if x not in to_remove else False for x in range(len(vpynew['Cell_IDs']))]
+                vpynew['unique_trace'] = [True if x not in to_remove else False for x in range(len(vpynew['ROIs']))]
 
             print(vpynew['unique_trace'])
+            print("Correl cutoff", correl_cutoff)
             print("There are", np.sum(vpynew['unique_trace']), "unique traces after correlation filtering.")
             print("And there were ", len(to_remove), "traces removed due to high correlation.")
 
             vpynew['cell_idxs'] = []
-            for cell in range(len(vpynew['Cell_IDs'])):
-                if vpynew['snr_over_3'][cell] and vpynew['unique_trace'][cell]:
+            for cell in range(len(vpynew['ROIs'])):
+                if vpynew['snr_over_thresh'][cell] and vpynew['unique_trace'][cell]:
                     vpynew['cell_idxs'].append(cell)
 
             print("Final number of cells after SNR and correlation filtering:", len(vpynew['cell_idxs']))
@@ -685,10 +716,14 @@ def analyzeFOV(folder_paths):
 
             ax1.imshow(img[:,:,1], cmap='gray')
             ax2.imshow(img[:,:,2], cmap='gray')
+            img2=ROIs.sum(0)
+            ax3.imshow(img2, cmap='gray')
             ax1.set_title('Mean image',color='k',fontsize=14)
             ax2.set_title('Corr image',color='k',fontsize=14)
+            ax3.set_title('ROIs',color='k',fontsize=14)
             ax1.set_axis_off()
             ax2.set_axis_off()
+            ax3.set_axis_off()
             ax_text.set_axis_off()
 
             llim = 0
@@ -777,7 +812,7 @@ def analyzeFOV(folder_paths):
             ax3.set_ylabel(r'$\Delta$F/F (%)',color='k',fontsize=12)
 
 
-            fig.savefig(fname[:-4] + '_volpy.pdf')
+            fig.savefig(rootpath + unique_save_string + '.pdf')
             plt.close('all')
             
             print("Saved VOLPY figure to:", fname[:-4] + '_volpy.pdf')
@@ -848,7 +883,7 @@ def analyzeFOV(folder_paths):
 
             print("Data type conversion complete.")
 
-            scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpynew': vpynew}, format='5', do_compression=True)
+            scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpynew': vpynew}, format='5', do_compression=True)
             print("Saved VOLPY data to:", fname[:-4] + '_volpy.mat')
 
 
@@ -865,6 +900,23 @@ def analyzeFOV(folder_paths):
         except ValueError:
             traceback.print_exc()
             print("No volpy data was saved")
+
+        # Cleanup R:/ drive
+        print("Cleaning up R:/ drive...")
+        def safe_close_mmap(arr):
+            try:
+                if hasattr(arr, "base") and hasattr(arr.base, "close"):
+                    arr.base.close()
+            except Exception as e:
+                print("close failed:", e)
+
+        gc.collect()  # force Python to release the memory mapping
+
+        # 2. Delete all files in R:/
+        for f in Path(r'R:/').glob('*'):
+            if f.is_file():
+                f.unlink()
+        print("Cleared all files from R:/")
 
 if __name__ == "__main__":
     main()
