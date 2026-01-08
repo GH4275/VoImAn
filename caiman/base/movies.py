@@ -1620,6 +1620,15 @@ def load(file_name: Union[str, list[str]],
                 logging.debug('loading mmap file in memory')
                 images = np.array(images).astype(outtype)
 
+
+            # Explicitly close the memory-mapped file (Yr) to release the file handle
+            if hasattr(Yr, 'base') and hasattr(Yr.base, 'close'):
+                Yr.base.close()  # Close the file mapping
+
+            # Run garbage collection to ensure any lingering references are cleared
+            import gc
+            gc.collect()
+
             logging.debug('mmap')
             return movie(images, fr=fr)
 
