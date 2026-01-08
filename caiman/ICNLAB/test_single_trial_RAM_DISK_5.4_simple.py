@@ -146,10 +146,10 @@ def analyzeFOV(folder_paths):
         fname = os.path.join(folder_path, tsm_files[0])
         print("Processing file:", fname)
 
-    
+        fpath = Path(fname)
         #Create new unique save name
-        unique_save_string = "-".join(fname.parts[-4:-1])
-        rootpath = Path(*fname.parts[:-4])
+        unique_save_string = "-".join(fpath.parts[-4:-1])
+        rootpath = str(Path(*fpath.parts[:-4]))
         print("Unique save string:", unique_save_string)
         print("Directory for Analysis Files:", rootpath)
 
