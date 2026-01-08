@@ -187,6 +187,14 @@ def volspike(pars):
     # Xinds = pars[11]
     # args = pars[12]
     args = pars[5]
+    min_width = args.get('min_width', 0)
+    max_width = args.get('max_width', 6)
+    w_h_ratio = args.get('w_h_ratio', 4)
+
+    # print("min_width:", min_width)
+    # print("max_width:", max_width)
+    # print("w_h_ratio:", w_h_ratio)
+
     window_length = int(fr * args['template_size']) # half window length for spike templates
     output = {}
     output['rawROI'] = {}
@@ -275,7 +283,8 @@ def volspike(pars):
                                           window_length, fr, hp_freq=args['hp_freq'], clip=args['clip'],
                                           threshold_method=args['threshold_method'], 
                                           pnorm=args['pnorm'], threshold=args['threshold'], 
-                                          min_spikes=args['min_spikes'], do_plot=False)
+                                          min_spikes=args['min_spikes'], do_plot=False,
+                                          min_width=min_width, max_width=max_width, w_h_ratio=w_h_ratio)
 
     print("checkpoint 1: initial spike detection done with %d spikes detected" % (spikes.shape[0]))
     if spikes.shape[0] != 0:
@@ -366,7 +375,8 @@ def volspike(pars):
             ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t,
                         window_length, fr,  hp_freq=args['hp_freq'], clip=args['clip'],
                         threshold_method=args['threshold_method'], pnorm=args['pnorm'], 
-                        threshold=args['threshold'], min_spikes=args['min_spikes'], do_plot=do_plot)
+                        threshold=args['threshold'], min_spikes=args['min_spikes'], do_plot=do_plot,
+                        min_width=min_width, max_width=max_width, w_h_ratio=w_h_ratio)
         
             num_spikes.append(spikes.shape[0])
             print("iteration %d done with %d spikes detected" % (iteration + 1, spikes.shape[0]))
@@ -488,7 +498,7 @@ def volspike(pars):
 
 
 def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold_method='adaptive_threshold', 
-                   min_spikes=10, pnorm=0.5, threshold=3,  do_plot=True):
+                   min_spikes=10, pnorm=0.5, threshold=3,  do_plot=True, min_width=0, max_width=6, w_h_ratio=4):
     """ Function for finding spikes and the temporal filter given one dimensional signals.
         Use function whitened_matched_filter to denoise spikes. Two thresholding methods can be 
         chosen, simple or 'adaptive thresholding'.
@@ -599,7 +609,7 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
     safe_widths = np.where(widths == 0, 1, widths)
     width_times = safe_widths / fr * 1000 # in ms
     print(width_times)
-    keep = (widths > 0) & (widths < 6) &((heights / width_times) > 4) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
+    keep = (width_times > min_width) & (width_times < max_width) &((heights / width_times) > w_h_ratio) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
     PTD = PTD[keep]
     locs = locs[keep]
     print(locs.shape[0], 'spikes remain after width/height filtering')
@@ -654,7 +664,7 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
     safe_widths = np.where(widths == 0, 1, widths)
     width_times = safe_widths / fr * 1000 # in ms
     print(width_times)
-    keep = (widths > 0) & (widths < 6) &((heights / width_times) > 4) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
+    keep = (width_times > min_width) & (width_times < max_width) &((heights / width_times) > w_h_ratio) # height/width > 6.25 (corresponds to 0.16 width at 1.0 height)
     PTD = PTD[keep]
     locs2 = locs2[keep]
     print(locs2.shape[0], 'spikes remain after width/height filtering')

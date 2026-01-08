@@ -10,7 +10,7 @@ class volparams(object):
                  hp_freq_pb=1/3, nPC_bg=8, ridge_bg=0.01, hp_freq=1, clip=100, 
                  threshold_method='adaptive_threshold', min_spikes=10, pnorm=0.5, threshold=3, 
                  sigmas=np.array([1, 1.5, 2]), n_iter=2, weight_update='ridge', do_plot=False,  
-                 do_cross_val=False, sub_freq=20, method='spikepursuit', superfactor=10, params_dict={}):
+                 do_cross_val=False, sub_freq=20, method='spikepursuit', superfactor=10, params_dict={}, min_width = 0, max_width = 6, w_h_ratio = 4):
         """Class for setting parameters for voltage imaging. Including parameters for the data, motion correction and
         spike detection. The preferred way to set parameters is by using the set function, where a subclass is determined
         and a dictionary is passed. The whole dictionary can also be initialized at once by passing a dictionary
@@ -48,6 +48,9 @@ class volparams(object):
             'sub_freq': sub_freq, # frequency for extracting subthreshold osciilation
             'method': method, # spikepursuit or atm (adaptive template matching)
             'superfactor': superfactor, # factor for temporal super-resolution of spike times, e.g. 10 for 1/(10*framerate)
+            'min_width': min_width,
+            'max_width': max_width,
+            'w_h_ratio': w_h_ratio
         }
 
         self.motion = {
