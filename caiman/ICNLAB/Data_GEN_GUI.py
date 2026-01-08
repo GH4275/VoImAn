@@ -79,7 +79,7 @@ root = TkinterDnD.Tk()
 root.title("TRAINING DATA GENERATOR")
 root.geometry("700x450")
 
-tk.Label(root, text="Drag and drop MAIN FOLDER/Drive for DATAGEN:").pack(pady=(10,0))
+tk.Label(root, text="Drag and drop MAIN FOLDER/Drive DATAGEN:").pack(pady=(10,0))
 
 # Listbox for folders
 folder_listbox = tk.Listbox(root, selectmode=tk.EXTENDED, width=80, height=15)
