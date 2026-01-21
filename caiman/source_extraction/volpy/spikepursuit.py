@@ -562,15 +562,22 @@ def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold
     data = data - np.median(data)
 
     # # Identify spike polarity of data by finding the number of spikes in positive and negative direction.
-    polarity_thresh = 3*np.std(data)
-    locsn = signal.find_peaks(-data, height=polarity_thresh, distance=int(fr / 100))[0]
-    locsp = signal.find_peaks(data, height=polarity_thresh, distance=int(fr / 100))[0]
+    polarity_thresh = 3*np.std(data) #was 3*
+
+    #add width filtering for which ones count
+    min_width_samples = int(min_width * fr / 1000)
+    max_width_samples = int(max_width * fr / 1000)
+    
+    locsn = signal.find_peaks(-data, height=polarity_thresh, distance=int(fr / 100), width=(min_width_samples, max_width_samples), rel_height=0.5)[0]
+    locsp = signal.find_peaks(data, height=polarity_thresh, distance=int(fr / 100), width=(min_width_samples, max_width_samples), rel_height=0.5)[0]
 
     if locsn.size > locsp.size:
         data = -data
         polarity = 'negative'
+        print("negative", len(locsn), len(locsp))
     else:
         polarity = 'positive'
+        print("positive", len(locsn), len(locsp))
 
     pks = data[signal.find_peaks(data, height=None)[0]]
 
