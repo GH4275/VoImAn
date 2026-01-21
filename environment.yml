@@ -36,3 +36,4 @@ dependencies:
 - yapf
 - zarr
 - tkinterdnd2
+- openpyxl
