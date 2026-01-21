@@ -10,7 +10,7 @@ import subprocess
 
 SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\TrainingDataGenerator.py"
 folder_paths = []
-
+ 
 import re
 
 # ---------- Functions ----------
@@ -28,17 +28,17 @@ def drop(event):
     fov_re = re.compile(r'^FOV\d+_T\d+$')
     for base_path in base_paths:
         if os.path.isdir(base_path) and base_path not in folder_listbox.get(0, tk.END):
-            for root, dirs, files in os.walk(base_path):
-                parts = os.path.normpath(root).split(os.sep)
+            for rootp, dirs, files in os.walk(base_path):
+                parts = os.path.normpath(rootp).split(os.sep)
 
                 # need at least: base / anything / yyyymmdd / FOV#_T#
                 if len(parts) < 3:
                     continue
 
                 if date_re.match(parts[-2]) and fov_re.match(parts[-1]):
-                    folder_paths.append(root)
-
-            folder_listbox.insert(tk.END, folder_paths)
+                    folder_paths.append(rootp)
+            for folder in folder_paths:
+                folder_listbox.insert(tk.END, folder)
 
 def run_caiman_thread():
     folders = folder_listbox.get(0, tk.END)
