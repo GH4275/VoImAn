@@ -203,7 +203,7 @@ class MotionCorrect(object):
         if self.use_cuda and not HAS_CUDA:
             logging.debug("pycuda is unavailable. Falling back to default FFT.")
 
-    def motion_correct(self, template=None, save_movie=False):
+    def motion_correct(self, template=None, save_movie=False, save_dir = "R:/"):
         """general function for performing all types of motion correction. The
         function will perform either rigid or piecewise rigid motion correction
         depending on the attribute self.pw_rigid and will perform high pass
@@ -240,7 +240,7 @@ class MotionCorrect(object):
                                       subindices=slice(400))]).min()
 
         if self.pw_rigid:
-            self.motion_correct_pwrigid(template=template, save_movie=save_movie)
+            self.motion_correct_pwrigid(template=template, save_movie=save_movie, save_dir = save_dir)
             if self.is3D:
                 # TODO - error at this point after saving
                 b0 = np.ceil(np.max([np.max(np.abs(self.x_shifts_els)),
@@ -250,13 +250,13 @@ class MotionCorrect(object):
                 b0 = np.ceil(np.maximum(np.max(np.abs(self.x_shifts_els)),
                                     np.max(np.abs(self.y_shifts_els))))
         else:
-            self.motion_correct_rigid(template=template, save_movie=save_movie)
+            self.motion_correct_rigid(template=template, save_movie=save_movie, save_dir = save_dir)
             b0 = np.ceil(np.max(np.abs(self.shifts_rig)))
         self.border_to_0 = b0.astype(int)
         self.mmap_file = self.fname_tot_els if self.pw_rigid else self.fname_tot_rig
         return self
 
-    def motion_correct_rigid(self, template=None, save_movie=False) -> None:
+    def motion_correct_rigid(self, template=None, save_movie=False, save_dir = "R:/") -> None:
         """
         Perform rigid motion correction
 
@@ -294,6 +294,7 @@ class MotionCorrect(object):
                 template=self.total_template_rig,
                 shifts_opencv=self.shifts_opencv,
                 save_movie_rigid=save_movie,
+                output_dir = save_dir,
                 add_to_movie=-self.min_mov,
                 nonneg_movie=self.nonneg_movie,
                 gSig_filt=self.gSig_filt,
@@ -2720,7 +2721,7 @@ def compute_metrics_motion_correction(fname, final_size_x, final_size_y, swap_di
 def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_splits_to_process=None, num_iter=1,
                                template=None, shifts_opencv=False, save_movie_rigid=False, add_to_movie=None,
                                nonneg_movie=False, gSig_filt=None, subidx=slice(None, None, 1), use_cuda=False,
-                               border_nan=True, var_name_hdf5='mov', is3D=False, indices=(slice(None), slice(None))):
+                               border_nan=True, var_name_hdf5='mov', is3D=False, indices=(slice(None), slice(None)), output_dir= "R:/"):
     """
     Function that perform memory efficient hyper parallelized rigid motion corrections while also saving a memory mappable file
 
@@ -2841,7 +2842,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview=None, splits=56, num_spl
                                                              dview=dview, save_movie=save_movie, base_name=base_name, subidx = subidx,
                                                              num_splits=num_splits_to_process, shifts_opencv=shifts_opencv, nonneg_movie=nonneg_movie, gSig_filt=gSig_filt,
                                                              use_cuda=use_cuda, border_nan=border_nan, var_name_hdf5=var_name_hdf5, is3D=is3D,
-                                                             indices=indices)
+                                                             indices=indices, output_dir=output_dir)
         if is3D:
             new_templ = np.nanmedian(np.stack([r[-1] for r in res_rig]), 0)           
         else:
@@ -3082,7 +3083,7 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
                                 upsample_factor_grid=4, order='F', dview=None, save_movie=True,
                                 base_name=None, subidx = None, num_splits=None, shifts_opencv=False, nonneg_movie=False, gSig_filt=None,
                                 use_cuda=False, border_nan=True, var_name_hdf5='mov', is3D=False,
-                                indices=(slice(None), slice(None))):
+                                indices=(slice(None), slice(None)), output_dir = "R:/"):
     """
 
     """
@@ -3124,7 +3125,6 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
         base_name = caiman.paths.fn_relocated(base_name)
 
         fname_tot:Optional[str] = caiman.paths.memmap_frames_filename(base_name, dims, T, order)
-        output_dir = "R:/"
         if isinstance(fname, tuple):
             #fname_tot = os.path.join(os.path.split(fname[0])[0], fname_tot)
             fname_tot = os.path.join(output_dir, fname_tot)
