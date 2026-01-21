@@ -31,27 +31,57 @@ def run_caiman_thread():
     root_folder = os.path.dirname(folders[0])
     log_file_path = os.path.join(root_folder, "processed_folders.txt")
 
+    # Write initial log
     with open(log_file_path, "w") as log_file:
         log_file.write("Processed Mouse ID Folders:\n")
+        for folder in folders:
+            log_file.write(f"{folder}\n")
 
-    for i, folder in enumerate(folders, start=1):
-        if not os.path.isdir(folder):
-            messagebox.showwarning("Warning", f"Skipping invalid folder: {folder}")
-            continue
+    # Get the selected analysis mode
+    mode = analysis_mode.get()
 
-        try:
-            cmd = f'cmd.exe /k python "{SCRIPT_PATH}" "{folder}"'
-            process = subprocess.Popen(cmd)
-            process.wait()
+    # Filter valid folders
+    valid_folders = [f for f in folders if os.path.isdir(f)]
 
-            with open(log_file_path, "a") as log_file:
-                log_file.write(f"{folder}\n")
+    if not valid_folders:
+        messagebox.showinfo("Info", "No valid folders to process.")
+        return
 
-        except Exception as e:
-            messagebox.showerror("Launch error", str(e))
-            break
+    cmd = (
+        'cmd.exe /k python "run_trials_controller.py" '
+        f'{mode} ' +
+        ' '.join(f'"{f}"' for f in valid_folders)
+    )
 
-    messagebox.showinfo("Done", f"Processing complete.\nLog saved at:\n{log_file_path}")
+
+    subprocess.Popen(cmd)
+
+
+    # Build a single command string to run all folders sequentially
+    # cmd_parts = []
+    # for folder in folders:
+    #     if not os.path.isdir(folder):
+    #         messagebox.showwarning("Warning", f"Skipping invalid folder: {folder}")
+    #         continue
+
+    #     # Each folder command
+    #     cmd_parts.append(f'python "{SCRIPT_PATH}" "{folder}" "{mode}"')
+
+    # if not cmd_parts:
+    #     messagebox.showinfo("Info", "No valid folders to process.")
+    #     return
+
+    # # Join commands sequentially and keep window open at the end
+    # # '&&' ensures the next folder runs after the previous finishes
+    # full_cmd = " && ".join(cmd_parts) + " && pause"
+
+    # try:
+    #     # Launch a single cmd window to run all commands
+    #     subprocess.Popen(f'cmd.exe /k {full_cmd}')
+    # except Exception as e:
+    #     messagebox.showerror("Launch error", str(e))
+
+
 
 def run_caiman():
     threading.Thread(target=run_caiman_thread, daemon=True).start()
@@ -60,8 +90,11 @@ def run_caiman():
 root = TkinterDnD.Tk()
 root.title("VoImAn Pipeline Runner")
 root.geometry("700x450")
+analysis_mode = tk.StringVar(value="new")  # default
 
-tk.Label(root, text="Drag and drop Mouse ID folders below:").pack(pady=(10,0))
+
+tk.Label(root, text="Drag and drop Mouse ID or Trial folders below:").pack(pady=(10,0))
+
 
 # Listbox for folders
 folder_listbox = tk.Listbox(root, selectmode=tk.EXTENDED, width=80, height=15)
@@ -74,6 +107,20 @@ button_frame = tk.Frame(root)
 button_frame.pack(pady=5)
 tk.Button(button_frame, text="Remove Selected", width=20, command=remove_selected).pack(side="left", padx=5)
 tk.Button(button_frame, text="Clear List", width=20, command=clear_list).pack(side="left", padx=5)
+
+# Analysis mode selection
+mode_frame = tk.LabelFrame(root, text="Analysis Mode")
+mode_frame.pack(pady=10)
+
+tk.Radiobutton(mode_frame, text="New", value="new",
+               variable=analysis_mode).pack(side="left", padx=10)
+
+tk.Radiobutton(mode_frame, text="Old", value="old",
+               variable=analysis_mode).pack(side="left", padx=10)
+
+tk.Radiobutton(mode_frame, text="All", value="all",
+               variable=analysis_mode).pack(side="left", padx=10)
+
 
 # Run button
 tk.Button(root, text="Process Data for Mouse ID", bg="#4CAF50", fg="white",

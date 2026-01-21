@@ -1,0 +1,49 @@
+# import subprocess
+# import sys
+# import os
+
+# SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+
+# mode = sys.argv[1]
+# folders = sys.argv[2:]
+
+# for folder in folders:
+#     print(f"\n=== Processing {folder} ===", flush=True)
+
+#     try:
+#         subprocess.run(
+#             ["python", SCRIPT_PATH, folder, mode],
+#             check=True
+#         )
+
+#     except subprocess.CalledProcessError:
+#         print(f"CaImAn failed on {folder}", flush=True)
+#         continue
+import subprocess
+import sys
+import os
+import time
+
+SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+
+mode = sys.argv[1]
+folders = sys.argv[2:]
+
+for i, folder in enumerate(folders):
+    print(f"\n=== Processing {folder} ===", flush=True)
+
+    try:
+        subprocess.run(
+            ["python", SCRIPT_PATH, folder, mode],
+            check=True
+        )
+
+    except subprocess.CalledProcessError:
+        print(f"CaImAn failed on {folder}", flush=True)
+        continue
+
+    # Rest 1 hour between folders (not after last)
+    if i < len(folders) - 1:
+        print("\n--- Resting for 1 hour before next folder ---\n", flush=True)
+        time.sleep(1)
+
