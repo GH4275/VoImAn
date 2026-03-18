@@ -164,7 +164,7 @@ def main():
 
 def analyzeFOV(folder_paths, analysis_mode):
     print("Importing packages and Initializing...")
-    version="V1.2"
+    version="V1.2_Highpass_tests"
     #V1.2: 0.8 corr cutoff, 2 minimum ratio of h over w for spikes, cell_idxs incremented by 1, wheel data appended to mat save
     print("version:", version)
     import matplotlib
@@ -417,252 +417,264 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             ##
 
-            print("Computing mean and correlation images...")
-            img = np.mean(m_rig, axis=0)
-            img = (img-np.mean(img))/np.std(img)
+            highpasses = [0, 10, 20, 30]
+            for roundnum in [0, 1, 2, 3]:
+                print(f"Processing round {roundnum}")
+                print("High-pass threshold:", highpasses[roundnum], "Hz")
 
+                print("Computing mean and correlation images...")
+                img = np.mean(m_rig, axis=0)
+                img = (img-np.mean(img))/np.std(img)
+
+                
+                import numpy as np
+                import matplotlib.pyplot as plt
+                from scipy.signal import butter, filtfilt
+                from tqdm import tqdm
+
+                # ===============================
+                # 1. Parameters
+                # ===============================
+                HIGHPASS_THRESH = (highpasses[roundnum])
+                shape = m_rig.shape
+                # ===============================
+                # 2. Load memory-mapped video
+                # ===============================
+
+                video = np.memmap(
+                    mc.mmap_file[0],
+                    dtype=np.float32,
+                    mode="r",
+                    shape=shape,
+                    order="C"
+                ).swapaxes(1, 2)
+
+                T, H, W = video.shape
+                print(f"Loaded video: {video.shape}")
+
+                # ===============================
+                # 3. High-pass filter (bandpass-compatible API)
+                # ===============================
+                def highpass_filter(data, fs, low, high=None, order=3):
+                    """
+                    High-pass filter using the 'low' cutoff.
+                    The 'high' argument is accepted for API compatibility but ignored.
+                    """
+                    nyq = 0.5 * fs
+                    b, a = butter(order, low / nyq, btype="high")
+                    return filtfilt(b, a, data, axis=0)
+
+                # ===============================
+                # Parameters
+                # ===============================
+                TILE_SIZE = 4
+                H, W = 512, 512
+                FRAME_RATE = fr
+                # (low, high), high ignored
+                DISPLAY_CLIP = 99
+
+                # ===============================
+                # Coherence metric
+                # ===============================
+                def coherence_metric(tile_filt):
+                    """
+                    tile_filt: shape (T, Npix)
+                    Returns mean pixel-to-tile correlation.
+                    """
+                    # Tile reference (subthreshold signals sum coherently)
+                    ref = tile_filt.mean(axis=1)
+
+
+                    ref -= ref.mean()
+                    ref_std = ref.std() + 1e-9
+
+                    # Normalize reference
+                    ref /= ref_std
+
+                    # Normalize pixels
+                    pix = tile_filt - tile_filt.mean(axis=0)
+                    pix /= (pix.std(axis=0) + 1e-9)
+
+                    # Correlation with reference
+                    corr = np.mean(ref[:, None] * pix, axis=0)
+
+                    # Use mean absolute correlation as coherence
+                    return np.mean(np.abs(corr))
+
+
+                # ===============================
+                # Output tile map
+                # ===============================
+                n_tiles_y = H // TILE_SIZE
+                n_tiles_x = W // TILE_SIZE
+
+                tile_coherence_map = np.zeros((n_tiles_y, n_tiles_x), dtype=np.float32)
+
+                # ===============================
+                # Main loop
+                # ===============================
+                with tqdm(total=n_tiles_y * n_tiles_x, desc="Computing coherence") as pbar:
+                    for ty in range(n_tiles_y):
+                        for tx in range(n_tiles_x):
+
+                            y0 = ty * TILE_SIZE
+                            y1 = y0 + TILE_SIZE
+                            x0 = tx * TILE_SIZE
+                            x1 = x0 + TILE_SIZE
+
+                            # Extract tile: (T, 16, 16)
+                            tile = video[:, y0:y1, x0:x1]
+                            tile = tile.reshape(T, -1)
+
+
+                            if HIGHPASS_THRESH > 0:
+                                # High-pass filter all pixels independently
+                                tile_filt = highpass_filter(
+                                    tile, FRAME_RATE, HIGHPASS_THRESH
+                                )
+                            else:
+                                tile_filt = tile
+
+                            # Compute coherence
+                            tile_coherence_map[ty, tx] = coherence_metric(tile_filt)
+
+                            pbar.update(1)
+
+                # ===============================
+                # Expand to image resolution
+                # ===============================
+                coherence_image = np.repeat(
+                    np.repeat(tile_coherence_map, TILE_SIZE, axis=0),
+                    TILE_SIZE, axis=1
+                )
+
+                if hasattr(video, 'base') and hasattr(video.base, 'close'):
+                    video.base.close()
+
+                del video
+                gc.collect()
+
+                # ===============================
+                # Visualization
+                # ===============================
+                vmax = np.percentile(coherence_image, DISPLAY_CLIP)
+
+                plt.figure(figsize=(6, 6))
+                plt.imshow(coherence_image, cmap="viridis", vmin=0, vmax=vmax)
+                plt.title("Grid-based subthreshold coherence ("+str(TILE_SIZE)+"×"+str(TILE_SIZE)+" tiles)")
+                plt.colorbar(label="Mean |pixel–tile correlation|")
+                plt.axis("off")
+                plt.tight_layout()
+                plt.show()
+                plt.close('all')
+
+                img_corr = coherence_image
+                summary_images = np.stack([img, img, img_corr], axis=0).astype(np.float32)
+                #cm.movie(summary_images).save(fname[:-5]+'_summary_images.tif')
+
+                plt.imshow(summary_images[0], cmap='gray')
+                plt.axis('off')
+                #plt.savefig(fname[:-4]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
+                plt.close('all') # Save the figure and close the plot   
+
+                plt.imshow(summary_images[2], cmap='gray')
+                plt.axis('off')
+                #plt.savefig(fname[:-4]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
+                plt.close('all') # Save the figure and close the plot   
+                img = summary_images.transpose([1, 2, 0])
+
+
+                print(fname[:-4]+'_corr.tif')
+                height, width = img.shape[:2]
+                print(img.shape)
+
+                # --------------------------------------------------------------
+                # Extract channels like MATLAB
+                # --------------------------------------------------------------
+                R = img[:, :, 0]
+                B = img[:, :, 2]
+
+                # --------------------------------------------------------------
+                # MATLAB-style normalization (mat2gray + uint8)
+                # --------------------------------------------------------------
+                def normalize_like_matlab(x):
+                    x = x.astype(np.float64)
+                    mn = x.min()
+                    mx = x.max()
+                    x = (x - mn) / (mx - mn + 1e-12)
+
+                    # MATLAB uint8 applies rounding, not floor
+                    x = np.round(255 * x).astype(np.uint8)
+                    return x
+
+                R_norm = normalize_like_matlab(R)
+                B_norm = normalize_like_matlab(B)
+
+                # --------------------------------------------------------------
+                # Build MATLAB-equivalent RGB (R,R,B)
+                # --------------------------------------------------------------
+                rgb = np.stack([R_norm, R_norm, B_norm], axis=2).astype(np.uint8)
+
+                # --------------------------------------------------------------
+                # Save as PNG/TIF (MATLAB-compatible pixel data)
+                # --------------------------------------------------------------
+                outname =  rootpath + unique_save_string + f"_{HIGHPASS_THRESH}hz.tif"
+                Image.fromarray(rgb).save(outname)
+
+                print("Saved:", outname)
+                img = rgb.copy()
+
+
+
+                ##
+                print("Running Mask R-CNN inference...")
+                weights_path="C:/Users/ICNLab/caiman_data/testdata/testdata/mask_rcnn_neuron_0012.h5"
+                #download_model('mask_rcnn')
+                #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
+                r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
+                ROIs = r['masks'].transpose([2, 0, 1])
+                Coords = r['rois']
+                #cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
+
+                fig, axs = plt.subplots(1, 2)
+                axs[0].imshow(summary_images[1])
+                axs[1].imshow(ROIs.sum(0))
+                axs[0].set_title('mean image')
+                axs[1].set_title('masks')
+                plt.savefig(rootpath + unique_save_string + f"_{HIGHPASS_THRESH}hz_ROIS.png", format='png', bbox_inches='tight', pad_inches=0)
+                print("Saved:", rootpath + unique_save_string + f"_{HIGHPASS_THRESH}hz_ROIS.png")
+                plt.close('all')# Save the figure and close the plot   
+
+                #save ROIs as npy array
+                #np.save(fname[:-4]+'newmrcnn_ROIs.npy', ROIs)
+                #print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
+
+                ###NEW SECTION FOR ROI COORDINATE EXTRACTION
+                cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in Coords]
+                cell_centers = np.array(cell_centers)
+                print("Cell centers:", cell_centers)    
+                #display the cell centers on the image
+                # fig, ax = plt.subplots(figsize=(6, 6))
+                # ax.imshow(img, cmap='gray') # Display the image
+                # ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
+                # ax.set_title('Cell centers')    # Set the title of the plot
+                #plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
+                plt.close('all') # Save the figure and close the plot     
+
+                # Save to a file
+                #save_path = fname[:-4] + '_cell_centers.npy'
+                #np.save(save_path, cell_centers)
+
+                #print(f"Cell centers saved to {save_path}")
+
+                #check if ROIS are empty and if so skip and save error
+                
+                print("Done with round", roundnum, "ROIs found:", ROIs.shape[0])
             
-            import numpy as np
-            import matplotlib.pyplot as plt
-            from scipy.signal import butter, filtfilt
-            from tqdm import tqdm
-
-            # ===============================
-            # 1. Parameters
-            # ===============================
-            HIGHPASS_THRESH = (5)
-            shape = m_rig.shape
-            # ===============================
-            # 2. Load memory-mapped video
-            # ===============================
-
-            video = np.memmap(
-                mc.mmap_file[0],
-                dtype=np.float32,
-                mode="r",
-                shape=shape,
-                order="C"
-            ).swapaxes(1, 2)
-
-            T, H, W = video.shape
-            print(f"Loaded video: {video.shape}")
-
-            # ===============================
-            # 3. High-pass filter (bandpass-compatible API)
-            # ===============================
-            def highpass_filter(data, fs, low, high=None, order=3):
-                """
-                High-pass filter using the 'low' cutoff.
-                The 'high' argument is accepted for API compatibility but ignored.
-                """
-                nyq = 0.5 * fs
-                b, a = butter(order, low / nyq, btype="high")
-                return filtfilt(b, a, data, axis=0)
-
-            # ===============================
-            # Parameters
-            # ===============================
-            TILE_SIZE = 4
-            H, W = 512, 512
-            FRAME_RATE = fr
-            # (low, high), high ignored
-            DISPLAY_CLIP = 99
-
-            # ===============================
-            # Coherence metric
-            # ===============================
-            def coherence_metric(tile_filt):
-                """
-                tile_filt: shape (T, Npix)
-                Returns mean pixel-to-tile correlation.
-                """
-                # Tile reference (subthreshold signals sum coherently)
-                ref = tile_filt.mean(axis=1)
-
-
-                ref -= ref.mean()
-                ref_std = ref.std() + 1e-9
-
-                # Normalize reference
-                ref /= ref_std
-
-                # Normalize pixels
-                pix = tile_filt - tile_filt.mean(axis=0)
-                pix /= (pix.std(axis=0) + 1e-9)
-
-                # Correlation with reference
-                corr = np.mean(ref[:, None] * pix, axis=0)
-
-                # Use mean absolute correlation as coherence
-                return np.mean(np.abs(corr))
-
-
-            # ===============================
-            # Output tile map
-            # ===============================
-            n_tiles_y = H // TILE_SIZE
-            n_tiles_x = W // TILE_SIZE
-
-            tile_coherence_map = np.zeros((n_tiles_y, n_tiles_x), dtype=np.float32)
-
-            # ===============================
-            # Main loop
-            # ===============================
-            with tqdm(total=n_tiles_y * n_tiles_x, desc="Computing coherence") as pbar:
-                for ty in range(n_tiles_y):
-                    for tx in range(n_tiles_x):
-
-                        y0 = ty * TILE_SIZE
-                        y1 = y0 + TILE_SIZE
-                        x0 = tx * TILE_SIZE
-                        x1 = x0 + TILE_SIZE
-
-                        # Extract tile: (T, 16, 16)
-                        tile = video[:, y0:y1, x0:x1]
-                        tile = tile.reshape(T, -1)
-
-                        # High-pass filter all pixels independently
-                        tile_filt = highpass_filter(
-                            tile, FRAME_RATE, HIGHPASS_THRESH
-                        )
-
-                        # Compute coherence
-                        tile_coherence_map[ty, tx] = coherence_metric(tile_filt)
-
-                        pbar.update(1)
-
-            # ===============================
-            # Expand to image resolution
-            # ===============================
-            coherence_image = np.repeat(
-                np.repeat(tile_coherence_map, TILE_SIZE, axis=0),
-                TILE_SIZE, axis=1
-            )
-
-            if hasattr(video, 'base') and hasattr(video.base, 'close'):
-                video.base.close()
-
-            del video
-            gc.collect()
-
-            # ===============================
-            # Visualization
-            # ===============================
-            vmax = np.percentile(coherence_image, DISPLAY_CLIP)
-
-            plt.figure(figsize=(6, 6))
-            plt.imshow(coherence_image, cmap="viridis", vmin=0, vmax=vmax)
-            plt.title("Grid-based subthreshold coherence ("+str(TILE_SIZE)+"×"+str(TILE_SIZE)+" tiles)")
-            plt.colorbar(label="Mean |pixel–tile correlation|")
-            plt.axis("off")
-            plt.tight_layout()
-            plt.show()
-            plt.close('all')
-
-            img_corr = coherence_image
-            summary_images = np.stack([img, img, img_corr], axis=0).astype(np.float32)
-            #cm.movie(summary_images).save(fname[:-5]+'_summary_images.tif')
-
-            plt.imshow(summary_images[0], cmap='gray')
-            plt.axis('off')
-            #plt.savefig(fname[:-4]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
-            plt.close('all') # Save the figure and close the plot   
-
-            plt.imshow(summary_images[2], cmap='gray')
-            plt.axis('off')
-            #plt.savefig(fname[:-4]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
-            plt.close('all') # Save the figure and close the plot   
-            img = summary_images.transpose([1, 2, 0])
-
-
-            print(fname[:-4]+'_corr.tif')
-            height, width = img.shape[:2]
-            print(img.shape)
-
-            # --------------------------------------------------------------
-            # Extract channels like MATLAB
-            # --------------------------------------------------------------
-            R = img[:, :, 0]
-            B = img[:, :, 2]
-
-            # --------------------------------------------------------------
-            # MATLAB-style normalization (mat2gray + uint8)
-            # --------------------------------------------------------------
-            def normalize_like_matlab(x):
-                x = x.astype(np.float64)
-                mn = x.min()
-                mx = x.max()
-                x = (x - mn) / (mx - mn + 1e-12)
-
-                # MATLAB uint8 applies rounding, not floor
-                x = np.round(255 * x).astype(np.uint8)
-                return x
-
-            R_norm = normalize_like_matlab(R)
-            B_norm = normalize_like_matlab(B)
-
-            # --------------------------------------------------------------
-            # Build MATLAB-equivalent RGB (R,R,B)
-            # --------------------------------------------------------------
-            rgb = np.stack([R_norm, R_norm, B_norm], axis=2).astype(np.uint8)
-
-            # --------------------------------------------------------------
-            # Save as PNG/TIF (MATLAB-compatible pixel data)
-            # --------------------------------------------------------------
-            outname =  rootpath + unique_save_string + ".tif"
-            Image.fromarray(rgb).save(outname)
-
-            print("Saved:", outname)
-            img = rgb.copy()
 
 
 
-            ##
-            print("Running Mask R-CNN inference...")
-            weights_path="C:/Users/ICNLab/caiman_data/testdata/testdata/mask_rcnn_neuron_0012.h5"
-            #download_model('mask_rcnn')
-            #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
-            r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
-            ROIs = r['masks'].transpose([2, 0, 1])
-            Coords = r['rois']
-            #cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
-
-            fig, axs = plt.subplots(1, 2)
-            axs[0].imshow(summary_images[1])
-            axs[1].imshow(ROIs.sum(0))
-            axs[0].set_title('mean image')
-            axs[1].set_title('masks')
-            #plt.savefig(fname[:-6] + 'newmrcnn_ROIs.png', format='png', bbox_inches='tight', pad_inches=0)
-            plt.close('all')# Save the figure and close the plot   
-
-            #save ROIs as npy array
-            #np.save(fname[:-4]+'newmrcnn_ROIs.npy', ROIs)
-            #print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
-
-            ###NEW SECTION FOR ROI COORDINATE EXTRACTION
-            cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in Coords]
-            cell_centers = np.array(cell_centers)
-            print("Cell centers:", cell_centers)    
-            #display the cell centers on the image
-            # fig, ax = plt.subplots(figsize=(6, 6))
-            # ax.imshow(img, cmap='gray') # Display the image
-            # ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
-            # ax.set_title('Cell centers')    # Set the title of the plot
-            #plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
-            plt.close('all') # Save the figure and close the plot     
-
-            # Save to a file
-            #save_path = fname[:-4] + '_cell_centers.npy'
-            #np.save(save_path, cell_centers)
-
-            #print(f"Cell centers saved to {save_path}")
-
-            #check if ROIS are empty and if so skip and save error
-            if ROIs.shape[0] == 0:
-                print("No ROIs found.")
-                raise ValueError("No ROIs detected, skipping further analysis for this trial.")
-            else:
-                print(f"Found {ROIs.shape[0]} ROIs.")
+            raise ValueError("Intentional stop after ROI extraction for testing purposes")
 
 
             cm.stop_server(dview=dview)

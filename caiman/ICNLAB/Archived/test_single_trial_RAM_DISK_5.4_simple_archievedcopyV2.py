@@ -12,7 +12,6 @@ def main():
     import csv
     from datetime import datetime
     from pathlib import Path
-    import traceback
 
     parser = argparse.ArgumentParser()
     parser.add_argument("froot", help="Path to the input movie file")
@@ -56,7 +55,7 @@ def main():
             print("Mode: old -> skipping", p)
         else:
             # analysis_mode == "all" OR passes mode check
-            print("Mode: "+str(analysis_mode)+" -> proceeding:", p)
+            print("Mode: all -> proceeding:", p)
             folder_paths = froot
             analyzeFOV([folder_paths], analysis_mode)  # wrap in list for compatibility
 
@@ -237,34 +236,15 @@ def analyzeFOV(folder_paths, analysis_mode):
     ##BEGIN MAIN ANALYSIS LOOP
     for folder_path in folder_paths:
         try:
-            #print to log even if no tsm
-            rootpath = Path(folder_path).parts[0] + Path(folder_path).parts[-4] + '\\Analysis\\'
-            Path(rootpath).mkdir(parents=True, exist_ok=True)
-            log_csv_path = Path(rootpath) / "MasterAnalysisLOG.csv" #Master CSV path
-            unique_save_string1 = "-".join(Path(folder_path).parts[-3:])
 
             # find the .tsm file in the folder
             tsm_files = [f for f in os.listdir(folder_path) if f.endswith(('.tsm', '.dcimg'))]
             if not tsm_files:
                 print(f"No recording files found in {folder_path}, skipping.")
-                #Append new row to MASTERLOG
-                today_str = datetime.now().strftime("%Y%m%d%H%M%S")  # compact datetime string
-                new_row = [version, today_str, unique_save_string1, "No recording file"]
-                with open(log_csv_path, mode='a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(new_row)
-                print(f"Added new ERROR row to MasterAnalysisLOG.csv: {new_row}")
                 continue
             #continue if more than one .tsm file found
             if len(tsm_files) > 1:
                 print(f"Multiple recording files found in {folder_path}, skipping.")
-                #Append new row to MASTERLOG
-                today_str = datetime.now().strftime("%Y%m%d%H%M%S")  # compact datetime string
-                new_row = [version, today_str, unique_save_string1, "Multiple recording files"]
-                with open(log_csv_path, mode='a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(new_row)
-                print(f"Added new ERROR row to MasterAnalysisLOG.csv: {new_row}")
                 continue
 
             fname = os.path.join(folder_path, tsm_files[0])
@@ -280,10 +260,6 @@ def analyzeFOV(folder_paths, analysis_mode):
             Path(rootpath).mkdir(parents=True, exist_ok=True)
             log_csv_path = Path(rootpath) / "MasterAnalysisLOG.csv" #Master CSV path
 
-            #grab data for plotting with single_trial_simple_plotting.py
-            mouseID = fpath.parts[-4]
-            date = fpath.parts[-3]
-            trialname = fpath.parts[-2]
 
             ##
             #fname = r'C:\Users\ICNLab\caiman_data\testdata\testdata\FOV1_T2RAM2\FOV1_T2.tsm'
@@ -644,10 +620,10 @@ def analyzeFOV(folder_paths, analysis_mode):
             cell_centers = np.array(cell_centers)
             print("Cell centers:", cell_centers)    
             #display the cell centers on the image
-            # fig, ax = plt.subplots(figsize=(6, 6))
-            # ax.imshow(img, cmap='gray') # Display the image
-            # ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
-            # ax.set_title('Cell centers')    # Set the title of the plot
+            fig, ax = plt.subplots(figsize=(6, 6))
+            ax.imshow(img, cmap='gray') # Display the image
+            ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
+            ax.set_title('Cell centers')    # Set the title of the plot
             #plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
             plt.close('all') # Save the figure and close the plot     
 
@@ -656,14 +632,6 @@ def analyzeFOV(folder_paths, analysis_mode):
             #np.save(save_path, cell_centers)
 
             #print(f"Cell centers saved to {save_path}")
-
-            #check if ROIS are empty and if so skip and save error
-            if ROIs.shape[0] == 0:
-                print("No ROIs found.")
-                raise ValueError("No ROIs detected, skipping further analysis for this trial.")
-            else:
-                print(f"Found {ROIs.shape[0]} ROIs.")
-
 
             cm.stop_server(dview=dview)
             c, dview, n_processes = cm.cluster.setup_cluster(
@@ -776,17 +744,15 @@ def analyzeFOV(folder_paths, analysis_mode):
             vpy = vpy.estimates
             #vpy['spikes'] = np.array(vpy['spikes'], dtype=object)
 
-            # try:
-            num_frames = np.max(vpy['dFF'].shape)
-            dur = num_frames/640
-            vpy['snr_over_thresh'] = []
+            try:
+                num_frames = np.max(vpy['dFF'].shape)
+                dur = num_frames/640
+                vpy['snr_over_thresh'] = []
 
-            vpy['raster'] = np.zeros_like(vpy['dFF'])
-            vpy['firing_rate'] = np.zeros_like(vpy['dFF'])
-            vpy['unique_trace'] = []
-            vpy['cell_idxs'] = []
-
-            if vpy['spikes'].size > 0:
+                vpy['raster'] = np.zeros_like(vpy['dFF'])
+                vpy['firing_rate'] = np.zeros_like(vpy['dFF'])
+                vpy['unique_trace'] = []
+                vpy['cell_idxs'] = []
 
                 for i in range(vpy['dFF'].shape[0]-1):
                     vpy['raster'][i, vpy['spikes'][i]] = 1
@@ -821,141 +787,256 @@ def analyzeFOV(folder_paths, analysis_mode):
                 print("Final number of cells after SNR and correlation filtering:", len(vpy['cell_idxs']))
                 print(vpy['cell_idxs'])
                 print(len(vpy['cell_idxs']))
-            else:
-                print("No spikes > threshold in this trial.")
-                raise ValueError("No spikes detected, skipping further analysis for this trial.")
 
-            wheel_mat = os.path.dirname(fname) + '\\Wheel.mat'
-            if os.path.exists(wheel_mat):
-                wheel=mat73.loadmat(wheel_mat)
-                print("Loaded wheel data from:", wheel_mat)
-            else:
-                print("No wheel data found at:", wheel_mat)
-                wheel = None
+                #make figure
+                plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames)
+                # cells = np.array(vpy['cell_idxs'])
+                # time = np.arange(0,dur,1/640)
 
-            #make figure
-            plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames, mouseID, date, trialname, wheel)
+                # fig = plt.figure(figsize=(8.0, 11.0), facecolor='w',constrained_layout=True)
+                # spec = fig.add_gridspec(ncols=4, nrows=5, width_ratios=[1,1,1,1], height_ratios=[2, 5,1,1,1])
+                # ax1 = fig.add_subplot(spec[0, 0])
+                # ax2 = fig.add_subplot(spec[0, 1])
+                # ax25 = fig.add_subplot(spec[0, 2])
+                # ax_text = fig.add_subplot(spec[0, 3],facecolor='w')
+                # ax3 = fig.add_subplot(spec[1, :],facecolor='w')
+                # ax4 = fig.add_subplot(spec[4, :],facecolor='w')
+                # ax5 = fig.add_subplot(spec[2, :],facecolor='w')
+                # ax5r = ax5.twinx()
+                # ax6 = fig.add_subplot(spec[3, :],facecolor='w')
+                # #ax7 = fig.add_subplot(spec[4, :],facecolor='w')
 
-            print("Saving VOLPY data to MAT file...")
-            vpy['ROIs'] = ROIs
-            #vpy['rect'] = r['rois']
-            vpy['img'] = img
-            del vpy['rawROI']
-            #scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
+                # ax1.imshow(img[:,:,1], cmap='gray')
+                # ax2.imshow(img[:,:,2], cmap='gray')
+                # img2=ROIs.sum(0)
+                # ax25.imshow(img2, cmap='gray')
+                # ax1.set_title('Mean image',color='k',fontsize=14)
+                # ax2.set_title('Corr image',color='k',fontsize=14)
+                # ax25.set_title('ROIs',color='k',fontsize=14)
+                # ax1.set_axis_off()
+                # ax2.set_axis_off()
+                # ax25.set_axis_off()
+                # ax_text.set_axis_off()
 
-            print("Converting data types for fast saving...")
+                # llim = 0
+                # if len(cells)>0:
+                #     pos_cells = []
+                #     neg_cells = []
+                #     b, a = butter(1, [1.5, 100], fs=640, btype='band')
+                #     k = 1
+                #     for i in range(0, len(cells)):
+                #         if ''.join(vpy['polarity'][cells[i]]) in 'negative':
+                #             color = '#9AAB3A'
+                #             mult = -1
+                #             neg_cells.append(cells[i])
+                #         else:
+                #             color = '#54A0A8'
+                #             mult = 1
+                #             pos_cells.append(cells[i])
+                #         y = np.array(lfilter(b,a,stats.zscore(np.array(vpy['dFF'][cells[i]] * mult * 100,dtype=np.float32))) + ((k - 1) * 8)).reshape(1,num_frames)
+                #         ax3.plot(llim+time,y[0,:],color, linewidth=0.3)
+                #         ax3.plot(llim+time[vpy['spikes'][cells[i]]],np.max(y)*np.ones(vpy['spikes'][cells[i]].shape[0]),"|",color='firebrick',markersize=2)
+                #         k = k + 1
 
-            #add 1 to cell_idxs
-            vpy['cell_idxs'] = [x + 1 for x in vpy['cell_idxs']]
 
-            # Keys identified from inspection output that need fixing
-            keys_to_convert_float = [
-                't', 'ts', 't_rec', 't_sub', 'templates', 'snr', 
-                'thresh', 'weights', 'locality', 'context_coord', 'F0', 'dFF', 
-                'raster', 'firing_rate'
-            ]
+                #     if len(pos_cells)>0:
+                #         mean_fr_pos = np.mean(vpy['firing_rate'][pos_cells,:], axis=0)
+                #         sem_pos = stats.sem(np.array(vpy['firing_rate'][pos_cells,:],dtype=np.float32), axis=0)
+                #         ax5r.plot(llim+time, np.array(mean_fr_pos,dtype='float32').ravel(), label='Mean firing rate', color='#54A0A8',linewidth=0.3)
+                #         ax5r.fill_between(llim+time, np.array(mean_fr_pos - sem_pos,dtype='float32').ravel(), np.array(mean_fr_pos + sem_pos,dtype='float32'), color='#54A0A8', alpha=0.3, label='SEM')
+                #         ax5.set_ylabel('Firing rate (Hz)',color='#54A0A8',fontsize=12)
+                #         ax5r.tick_params(axis ='y', labelcolor = '#54A0A8')
+                #     if len(neg_cells)>0:
+                #         mean_fr_neg = np.mean(vpy['firing_rate'][neg_cells,:], axis=0)
+                #         sem_neg = stats.sem(np.array(vpy['firing_rate'][neg_cells,:],dtype=np.float32), axis=0)
+                #         ax5.plot(llim+time, np.array(mean_fr_neg,dtype='float32').ravel(), label='Mean firing rate', color='#9AAB3A',linewidth=0.3)
+                #         ax5.fill_between(llim+time, np.array(mean_fr_neg - sem_neg,dtype='float32').ravel(), np.array(mean_fr_neg + sem_neg,dtype='float32'), color='#9AAB3A', alpha=0.3, label='SEM')
+                #         ax5.set_ylabel('Firing rate (Hz)',color='#9AAB3A',fontsize=12)
+                #         ax5r.tick_params(axis ='y', labelcolor = '#9AAB3A')
 
-            keys_to_convert_int = [
-                'num_spikes'
-            ]
+                # wheel_mat = os.path.dirname(fname) + '\\Wheel.mat'
+                # if os.path.exists(wheel_mat):
+                #     wheel=mat73.loadmat(wheel_mat)
+                #     if 'behavior' in wheel and wheel['behavior'] is not None:
+                #         ax4.plot(wheel['behavior'][:,0],wheel['behavior'][:,1],'r',linewidth=1.2)
+                #         if wheel['behavior'].shape[1]>2:
+                #             ax4.plot(wheel['behavior'][:,0],wheel['behavior'][:,2],'k',linewidth=1)
+                #         ax4.set_ylabel('Behavior',color='k',fontsize=12)
+                #         ax4.set_yticks([-1,0,1])
+                #         ax4.set_ylim([-2,2])
 
-            vpy['wheel'] = wheel #append wheel data to saved mat file
+                #     if wheel['data_time'] is not None:
+                #         if wheel['data_time'].any():
+                #             whl_time = np.arange(0,np.max(wheel['data_time']),1/640)
+                #             wheel_interp = np.interp(whl_time, wheel['data_time'], wheel['data_pos'])
+                #             speed = np.zeros_like(wheel_interp)
+                #             for i in range(0,len(whl_time)-1):
+                #                 speed[i] = (wheel_interp[i+1]-wheel_interp[i])/(whl_time[i+1]-whl_time[i])
 
-            # Load .tbn file to extract downsampled wheel data
-            tbn_fname = fname[:-4] + ".tbn"
-            with open(tbn_fname, "rb") as f:
-                header = np.fromfile(f, dtype=np.uint8, count=4)   # MATLAB default
-                data = np.fromfile(f, dtype=np.float64)
-            if data.size % 4 != 0:
-                raise ValueError(
-                    f"File has {data.size} float64 values, not divisible by 4"
-                )
-            nrows = data.size // 4
-            data = data.reshape((nrows, 4), order="F")
-            # MATLAB: downsample(data(:,4),2)
-            downsampled_channel_4 = data[:, 3][::2]
+                #             #speed[speed>100] = 0
+                #             #speed[speed<0] = 0
+                #             speed = savgol_filter(speed,64,1)
+                #             ax6.plot(whl_time,speed,'k',linewidth=1)
+                #             ax6.set_ylabel('Speed (cm/s)',color='k',fontsize=12)
+                #             #ax7.plot(whl_time,speed,'w',linewidth=1)
+                #             #ax7.set_ylabel('Speed (cm/s)',color='k',fontsize=12)
 
-            vpy['bnc4'] = downsampled_channel_4
-            print("Extracted downsampled channel 4 from .tbn file and added to vpy['bnc4'].")
+                #     if wheel['mouse'] is not None:
+                #         ax_text.text(0.5, 0.8, wheel['mouse'], color='k',fontsize=10, ha='center')
+                #     else:
+                #         ax_text.text(0.5, 0.8, unique_save_string, color='k',fontsize=10, ha='center')
 
-            # Process float conversions
-            for key in keys_to_convert_float:
-                if key in vpy and vpy[key].dtype == object:
+                #     ax_text.text(0.5, 0.4, wheel['stimulus'], color='k',fontsize=10, ha='center')
+                #     ax_text.text(0.5, 0.6, str(np.array(wheel['currentdate'],dtype='int32')), color='k',fontsize=10, ha='center')
+                #     #ax_text.text(0.5, 0.2, 'File = ' + wheel['file'], color='w',fontsize=10, ha='center')
+                #     if wheel['stimulus']=='Map' and 'rand_num' in wheel:
+                #         ax_text.text(0.5, 0, 'Field = ' + " ".join(str(x) for x in wheel['rand_num'].astype(int)), color='k',fontsize=5, ha='center')
+                #     if wheel['stimulus']=='Tuning' and 'rand_num' in wheel:
+                #         ax_text.text(0.5, 0, 'Orientation = ' + " ".join(str(x) for x in wheel['rand_num'].astype(int)), color='k',fontsize=5, ha='center')
+                #     # elif wheel['stimulus']=='Tuning' and 'rand_num' in wheel:
+                #     #     ax_text.text(0.5, 0, 'Orientation = ' + " ".join(str(x) for x in wheel['rand_num'].astype(int)), color='k',fontsize=5, ha='center')
+
+                #     # plot map numbers (OVERLAY ONLY)
+                #     if wheel.get('stimulus') == "Map" and wheel.get('rand_num') is not None:
+
+
+                #         result = wheel['rand_num'].flatten(order='F').astype(int).astype(str)
+
+                #         square_wave = wheel['behavior'][:, 2].astype(bool)
+
+                #         # Detect start and end indices of each 1-plateau
+                #         starts = np.where((~square_wave[:-1]) & square_wave[1:])[0]
+                #         ends = np.where(square_wave[:-1] & (~square_wave[1:]))[0]
+
+                #         if square_wave[0]:
+                #             starts = np.insert(starts, 0, 0)
+                #         if square_wave[-1]:
+                #             ends = np.append(ends, len(square_wave) - 1)
+
+                #         # Midpoint indices → time
+                #         mid_indices = (starts + ends) // 2
+                #         mid_times = wheel['behavior'][mid_indices, 0]
+
+                #         # Overlay numbers on EXISTING ax4
+                #         for i, mid in enumerate(mid_times):
+                #             if i < len(result):
+                #                 ax4.text(
+                #                     mid,
+                #                     1.05,
+                #                     result[i],
+                #                     ha='center',
+                #                     va='bottom',
+                #                     fontsize=10,
+                #                     color='black'
+                #                 )
+                    
+                # else:
+                #     print("Wheel data does not exist")
+
+
+                # for ax in [ax3,ax4,ax5,ax6]:
+                #     ax.tick_params(color='black', labelcolor='black')
+                #     ax.set_xlabel('Time (sec)',color='k',fontsize=12)
+                #     ax.set_xlim([llim,llim+dur])
+                #     for spine in ax.spines.values():
+                #         spine.set_edgecolor('black')
+                # ax3.set_title('dFF',color='k',fontsize=14)
+                # ax3.set_ylabel(r'$\Delta$F/F (%)',color='k',fontsize=12)
+
+
+                # fig.savefig(rootpath + unique_save_string + '.pdf')
+                # plt.close('all')
+                
+                # print("Saved VOLPY figure to:", fname[:-4] + '_volpy.pdf')
+
+                print("Saving VOLPY data to MAT file...")
+                vpy['ROIs'] = ROIs
+                #vpy['rect'] = r['rois']
+                vpy['img'] = img
+                del vpy['rawROI']
+                #scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
+
+
+
+
+
+                print("Converting data types for fast saving...")
+
+                #add 1 to cell_idxs
+                vpy['cell_idxs'] = [x + 1 for x in vpy['cell_idxs']]
+
+                # Keys identified from inspection output that need fixing
+                keys_to_convert_float = [
+                    't', 'ts', 't_rec', 't_sub', 'templates', 'snr', 
+                    'thresh', 'weights', 'locality', 'context_coord', 'F0', 'dFF', 
+                    'raster', 'firing_rate'
+                ]
+
+                keys_to_convert_int = [
+                    'num_spikes'
+                ]
+
+                vpy['wheel'] = wheel #append wheel data to saved mat file
+
+                # Process float conversions
+                for key in keys_to_convert_float:
+                    if key in vpy and vpy[key].dtype == object:
+                        try:
+                            # Attempt a direct conversion to float32 (fastest for scientific data)
+                            vpy[key] = np.array(vpy[key], dtype=np.float32)
+                            print(f"  Converted '{key}' to float32 array.")
+                        except ValueError:
+                            print(f"  Could not convert '{key}' to standard array dtype. Keeping as object array.")
+
+                # Process integer conversions
+                for key in keys_to_convert_int:
+                    if key in vpy and vpy[key].dtype == object:
+                        try:
+                            vpy[key] = np.array(vpy[key], dtype=np.int32)
+                            print(f"  Converted '{key}' to int32 array.")
+                        except ValueError:
+                            print(f"  Could not convert '{key}' to int32 array. Keeping as object array.")
+
+                # Handle variables that are inherently irregular lists that MUST be object arrays in Python, 
+                # but we ensure they are clean for saving.
+
+                # Handle 'mean_im', 'cell_n', 'polarity' (irregular shapes/strings)
+                for key in ['mean_im', 'cell_n', 'polarity']:
+                    if key in vpy and vpy[key].dtype == object:
+                        vpy[key] = np.array(vpy[key], dtype=object) # Ensure they are formally object arrays
+
+                # Handle spikes and low_spikes. The try/except handles the 'bool is not iterable' error.
+                if vpy['spikes'].dtype == object:
+                    vpy['spikes'] = np.array([list(x) for x in vpy['spikes']], dtype=object)
+                    
+                if vpy['low_spikes'].dtype == object:
                     try:
-                        # Attempt a direct conversion to float32 (fastest for scientific data)
-                        vpy[key] = np.array(vpy[key], dtype=np.float32)
-                        print(f"  Converted '{key}' to float32 array.")
-                    except ValueError:
-                        print(f"  Could not convert '{key}' to standard array dtype. Keeping as object array.")
-
-            # Process integer conversions
-            for key in keys_to_convert_int:
-                if key in vpy and vpy[key].dtype == object:
-                    try:
-                        vpy[key] = np.array(vpy[key], dtype=np.int32)
-                        print(f"  Converted '{key}' to int32 array.")
-                    except ValueError:
-                        print(f"  Could not convert '{key}' to int32 array. Keeping as object array (this is okay).")
-
-            # Handle variables that are inherently irregular lists that MUST be object arrays in Python, 
-            # but we ensure they are clean for saving.
-
-            # Handle 'mean_im', 'cell_n', 'polarity' (irregular shapes/strings)
-            for key in ['mean_im', 'cell_n', 'polarity']:
-                if key in vpy and vpy[key].dtype == object:
-                    vpy[key] = np.array(vpy[key], dtype=object) # Ensure they are formally object arrays
-
-            # Handle spikes and low_spikes. The try/except handles the 'bool is not iterable' error.
-            if vpy['spikes'].dtype == object:
-                vpy['spikes'] = np.array([list(x) for x in vpy['spikes']], dtype=object)
-                
-            if vpy['low_spikes'].dtype == object:
-                try:
-                    # This was causing the TypeError because it was actually a boolean array
-                    vpy['low_spikes'] = np.array([list(x) for x in vpy['low_spikes']], dtype=object)
-                except TypeError:
-                    # If it's a bool array, just make sure it's saved as a clean boolean array
-                    vpy['low_spikes'] = np.array(vpy['low_spikes'], dtype=bool) 
-
-            print("Data type conversion complete.")
-
-            def clean_none(data, name="root"):
-                if data is None:
-                    # Print the name of the key that has the None value
-                    print(f"Replacing None with [] at: {name}")
-                    return [] 
-                
-                elif isinstance(data, dict):
-                    # Recursively clean each key, passing the key name down for the print statement
-                    return {k: clean_none(v, name=f"{name} -> {k}") for k, v in data.items()}
-                
-                elif isinstance(data, list):
-                    # Recursively clean each list item, passing the index for the print statement
-                    return [clean_none(v, name=f"{name}[{i}]") for i, v in enumerate(data)]
-                
-                return data
-
-            vpy = clean_none(vpy)
-
-            print("Data type conversion complete.")
-
-            scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpy': vpy}, format='5', do_compression=True)
-            print("Saved VOLPY data to:", fname[:-4] + '_volpy.mat')
+                        # This was causing the TypeError because it was actually a boolean array
+                        vpy['low_spikes'] = np.array([list(x) for x in vpy['low_spikes']], dtype=object)
+                    except TypeError:
+                        # If it's a bool array, just make sure it's saved as a clean boolean array
+                        vpy['low_spikes'] = np.array(vpy['low_spikes'], dtype=bool) 
 
 
-            # vpy.estimates['params'] = opts
-            # save_name = f'volpy_{os.path.split(fnames)[1][:-5]}_{threshold_method}'
-            # np.save(fnames[:-4] + '_volpy.npy', vpy.estimates)
-            
-            del vpy
-            # % STOP CLUSTER and clean up log files
+                print("Data type conversion complete.")
 
-            log_files = glob.glob('*_LOG_*')
-            for log_file in log_files:
-                os.remove(log_file)
-            # except ValueError as e:
-            #     print(e)
-            #     print("No volpy data was saved")
+                scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpy': vpy}, format='5', do_compression=True)
+                print("Saved VOLPY data to:", fname[:-4] + '_volpy.mat')
+
+
+                # vpy.estimates['params'] = opts
+                # save_name = f'volpy_{os.path.split(fnames)[1][:-5]}_{threshold_method}'
+                # np.save(fnames[:-4] + '_volpy.npy', vpy.estimates)
+
+                del vpy
+                # % STOP CLUSTER and clean up log files
+
+                log_files = glob.glob('*_LOG_*')
+                for log_file in log_files:
+                    os.remove(log_file)
+            except ValueError:
+                traceback.print_exc()
+                print("No volpy data was saved")
 
             # Cleanup R:/ drive
             print("Cleaning up R:/ drive...")
@@ -976,7 +1057,6 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             #Append new row to MASTERLOG
             today_str = datetime.now().strftime("%Y%m%d%H%M%S")  # compact datetime string
-            print(today_str)
             new_row = [version, today_str, unique_save_string]
 
             with open(log_csv_path, mode='a', newline='') as f:
