@@ -24,7 +24,7 @@ import sys
 import os
 import time
 
-SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple_resumable.py"
 
 mode = sys.argv[1]
 folders = sys.argv[2:]

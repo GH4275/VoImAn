@@ -5,7 +5,7 @@ import threading
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import subprocess
 
-SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+#SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
 
 # ---------- Functions ----------
 def remove_selected():
@@ -16,10 +16,25 @@ def remove_selected():
 def clear_list():
     folder_listbox.delete(0, tk.END)
 
+# def drop(event):
+#     paths = root.tk.splitlist(event.data)
+#     for path in paths:
+#         if os.path.isdir(path) and path not in folder_listbox.get(0, tk.END):
+#             folder_listbox.insert(tk.END, path)
+
+
 def drop(event):
     paths = root.tk.splitlist(event.data)
     for path in paths:
-        if os.path.isdir(path) and path not in folder_listbox.get(0, tk.END):
+        # If a text file is dropped, read the relative paths inside it
+        if os.path.isfile(path) and path.endswith('.txt'):
+            with open(path, 'r') as file:
+                for line in file:
+                    cleaned_path = line.strip()
+                    if cleaned_path and cleaned_path not in folder_listbox.get(0, tk.END):
+                        folder_listbox.insert(tk.END, cleaned_path)
+        
+        elif os.path.isdir(path) and path not in folder_listbox.get(0, tk.END):
             folder_listbox.insert(tk.END, path)
 
 def run_caiman_thread():
