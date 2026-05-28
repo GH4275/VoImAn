@@ -38,7 +38,7 @@ if "%FOUND_CONDA%"=="0" (
 
 :run_script
 :: Step 4: Run your python file using the directory of this batch file
-python "%~dp0test_single_trial_RAM_DISK_5.4_simple_GUI.py"
+python "%~dp0volpy_simple_GUI.py"
 
 
 :: Optional: Keep the window open so they can see any errors before it closes

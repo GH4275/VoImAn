@@ -23,8 +23,16 @@ import subprocess
 import sys
 import os
 import time
+from pathlib import Path
 
-SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+#SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
+
+# Get the directory where run_trials_controller.py lives
+current_dir = Path(__file__).resolve().parent
+
+# Attach the specific script name and immediately convert to string for subprocess
+SCRIPT_PATH = str(current_dir / "volpy_analysis_solo.py")
+
 
 mode = sys.argv[1]
 folders = sys.argv[2:]
