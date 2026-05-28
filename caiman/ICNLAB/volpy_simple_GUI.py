@@ -5,8 +5,6 @@ import threading
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import subprocess
 
-#SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
-
 # ---------- Functions ----------
 def remove_selected():
     selected = folder_listbox.curselection()
@@ -15,13 +13,6 @@ def remove_selected():
 
 def clear_list():
     folder_listbox.delete(0, tk.END)
-
-# def drop(event):
-#     paths = root.tk.splitlist(event.data)
-#     for path in paths:
-#         if os.path.isdir(path) and path not in folder_listbox.get(0, tk.END):
-#             folder_listbox.insert(tk.END, path)
-
 
 def drop(event):
     paths = root.tk.splitlist(event.data)
@@ -71,33 +62,6 @@ def run_caiman_thread():
 
     subprocess.Popen(cmd)
 
-
-    # Build a single command string to run all folders sequentially
-    # cmd_parts = []
-    # for folder in folders:
-    #     if not os.path.isdir(folder):
-    #         messagebox.showwarning("Warning", f"Skipping invalid folder: {folder}")
-    #         continue
-
-    #     # Each folder command
-    #     cmd_parts.append(f'python "{SCRIPT_PATH}" "{folder}" "{mode}"')
-
-    # if not cmd_parts:
-    #     messagebox.showinfo("Info", "No valid folders to process.")
-    #     return
-
-    # # Join commands sequentially and keep window open at the end
-    # # '&&' ensures the next folder runs after the previous finishes
-    # full_cmd = " && ".join(cmd_parts) + " && pause"
-
-    # try:
-    #     # Launch a single cmd window to run all commands
-    #     subprocess.Popen(f'cmd.exe /k {full_cmd}')
-    # except Exception as e:
-    #     messagebox.showerror("Launch error", str(e))
-
-
-
 def run_caiman():
     threading.Thread(target=run_caiman_thread, daemon=True).start()
 
@@ -142,68 +106,3 @@ tk.Button(root, text="Process Data for Mouse ID", bg="#4CAF50", fg="white",
           height=3, command=run_caiman).pack(pady=15)
 
 root.mainloop()
-
-
-
-
-
-
-# import tkinter as tk
-# from tkinter import filedialog, messagebox
-# import subprocess
-# import os
-
-# SCRIPT_PATH = r"C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py"
-# DEFAULT_DATA_DIR = r"C:\Users\ICNLab\caiman_data\testdata\testdata"
-
-
-# def select_folder():
-#     folder = filedialog.askdirectory(initialdir=DEFAULT_DATA_DIR)
-#     if folder:
-#         folder_var.set(folder)
-
-
-# def run_caiman():
-#     folder = folder_var.get()
-
-#     if not os.path.isdir(folder):
-#         messagebox.showerror("Error", "Please select a valid data folder.")
-#         return
-
-#     if not os.path.isfile(SCRIPT_PATH):
-#         messagebox.showerror("Error", f"Script not found:\n{SCRIPT_PATH}")
-#         return
-
-#     cmd = f'cmd.exe /k python "{SCRIPT_PATH}" "{folder}"'
-
-#     try:
-#         subprocess.Popen(cmd)
-#     except Exception as e:
-#         messagebox.showerror("Launch error", str(e))
-
-
-# # ---------- GUI ----------
-# root = tk.Tk()
-# root.title("VoImAn Pipeline Runner")   # <-- CHANGED
-# root.geometry("600x180")
-
-# folder_var = tk.StringVar(value=DEFAULT_DATA_DIR)
-
-# tk.Label(root, text="Select Mouse ID Folder:").pack(pady=(15, 5))
-
-# frame = tk.Frame(root)
-# frame.pack(fill="x", padx=10)
-
-# tk.Entry(frame, textvariable=folder_var).pack(side="left", fill="x", expand=True)
-# tk.Button(frame, text="Browse", command=select_folder).pack(side="left", padx=5)
-
-# tk.Button(
-#     root,
-#     text="Process Data for Mouse ID",  # <-- CHANGED
-#     command=run_caiman,
-#     height=2,
-#     bg="#4CAF50",
-#     fg="white"
-# ).pack(pady=20)
-
-# root.mainloop()

@@ -1,11 +1,57 @@
+#WAS NAMED: test_single_trial_RAM_DISK_5.4_simple_resumable.py in development, renamed to volpy_analysis_resumable.py for clarity and to be used in batch script with GUI version
 #version 5 integrates new correlation map, also to add help add width/height filtering and cell grid allignments
 #this is v5.py with updated volpy fit changes in 5.3 but without multitrial registration components
 #version 4 of test_single_trial_RAM_DISK.py with updated MATLAB .mat saving (sped up)
-# TO RUN: conda activate caiman
-# # python C:\Users\ICNLab\CaImAn_GV\caiman\ICNLAB\test_single_trial_RAM_DISK_5.4_simple.py C:\Users\ICNLab\caiman_data\testdata\testdata\NF107.6B
+
+def wait_for_receiver_done(file_path):
+    print("New version")
+    import os, time
+    from pathlib import Path
+    from datetime import datetime
+
+    now = datetime.now()
+    # Dynamic target for 10:01 PM today
+    target_1001 = now.replace(hour=22, minute=1, second=0, microsecond=0)
+    # Dynamic start for 9:30 PM today
+    start_930 = now.replace(hour=21, minute=30, second=0, microsecond=0)
+
+    # 1. If currently in the 9:30-10:01 window, wait until 10:01
+    if start_930 <= now <= target_1001:
+
+        ##
+        # Cleanup R:/ drive (temp RAM disk)
+        print("Cleaning up R:/ drive...")
+        def safe_close_mmap(arr):
+            try:
+                if hasattr(arr, "base") and hasattr(arr.base, "close"):
+                    arr.base.close()
+            except Exception as e:
+                print("close failed:", e)
+
+        # 2. Delete all files in R:/
+        for f in Path(r'R:/').glob('*'):
+            if f.is_file():
+                f.unlink()
+        print("Cleared all files from R:/")
+
+        wait_secs = (target_1001 - now).total_seconds()
+        print(f"[{now.strftime('%H:%M')}] Window hit. Waiting {int(wait_secs/60)}m until 22:01...")
+        time.sleep(wait_secs)
+
+    # 2. Check for file every 10 minutes until found
+    print(f"Monitoring for: {file_path}")
+    while True:
+        if os.path.exists(file_path):
+            print(f"[{datetime.now().strftime('%H:%M')}] Found! Resuming...")
+            return
+        
+        print(f"[{datetime.now().strftime('%H:%M')}] Not found. Sleeping 12m...")
+        time.sleep(600) # 10 minutes
+
+
+
 
 def main():
-
     import argparse
     import os
     import re
@@ -32,6 +78,8 @@ def main():
         #Master CSV path
         log_csv_path = Path(froot).parent.parent.parent  / "Analysis" / "MasterAnalysisLOG.csv"
         
+        if not log_csv_path.parent.exists():
+            log_csv_path.parent.mkdir(parents=True, exist_ok=True)
         # Ensure the CSV exists with header if needed
         if not log_csv_path.exists():
             with open(log_csv_path, mode='w', newline='') as f:
@@ -165,6 +213,7 @@ def main():
 def analyzeFOV(folder_paths, analysis_mode):
     print("Importing packages and Initializing...")
     version="V1.2"
+    RECEIVER_DONE = r"C:\Users\ICNLab\DailyAnalysis\Logging\RECEIVER_DONE.txt"
     #V1.2: 0.8 corr cutoff, 2 minimum ratio of h over w for spikes, cell_idxs incremented by 1, wheel data appended to mat save
     print("version:", version)
     import matplotlib
@@ -237,6 +286,9 @@ def analyzeFOV(folder_paths, analysis_mode):
     ##BEGIN MAIN ANALYSIS LOOP
     for folder_path in folder_paths:
         try:
+
+            wait_for_receiver_done(RECEIVER_DONE)
+
             #print to log even if no tsm
             rootpath = Path(folder_path).parts[0] + Path(folder_path).parts[-4] + '\\Analysis\\'
             Path(rootpath).mkdir(parents=True, exist_ok=True)
