@@ -155,6 +155,8 @@ def main():
         log_csv_path = Path(froot).parent / "Analysis" / "MasterAnalysisLOG.csv"
         
         # Ensure the CSV exists with header if needed
+        if not log_csv_path.parent.exists():
+            log_csv_path.parent.mkdir(parents=True, exist_ok=True)
         if not log_csv_path.exists():
             with open(log_csv_path, mode='w', newline='') as f:
                 writer = csv.writer(f)
