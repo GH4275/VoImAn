@@ -169,11 +169,16 @@ def main():
 def analyzeFOV(folder_paths, analysis_mode):
     print("Importing packages and Initializing...")
     version="V1.2"
+    
+    from pathlib import Path
+    current_dir = Path(__file__).resolve().parent
+    weights_path= str(current_dir / "mask_rcnn_neuron_0012.h5")
     #V1.2: 0.8 corr cutoff, 2 minimum ratio of h over w for spikes, cell_idxs incremented by 1, wheel data appended to mat save
     print("version:", version)
     import matplotlib
     matplotlib.use("Agg")   # non-interactive, no windows
     print(matplotlib.get_backend())
+
     from base64 import b64encode
     import cv2
     import glob
@@ -623,7 +628,7 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             ##
             print("Running Mask R-CNN inference...")
-            weights_path="C:/Users/ICNLab/caiman_data/testdata/testdata/mask_rcnn_neuron_0012.h5"
+            #weights_path="C:/Users/ICNLab/caiman_data/testdata/testdata/mask_rcnn_neuron_0012.h5"
             #download_model('mask_rcnn')
             #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
             r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
