@@ -155,6 +155,8 @@ def main():
         log_csv_path = Path(froot).parent / "Analysis" / "MasterAnalysisLOG.csv"
         
         # Ensure the CSV exists with header if needed
+        if not log_csv_path.parent.exists():
+            log_csv_path.parent.mkdir(parents=True, exist_ok=True)
         if not log_csv_path.exists():
             with open(log_csv_path, mode='w', newline='') as f:
                 writer = csv.writer(f)
@@ -213,11 +215,11 @@ def main():
 def analyzeFOV(folder_paths, analysis_mode):
     print("Importing packages and Initializing...")
     version="V1.2"
-    RECEIVER_DONE = r"C:\Users\ICNLab\DailyAnalysis\Logging\RECEIVER_DONE.txt"
 
     from pathlib import Path
     current_dir = Path(__file__).resolve().parent
     weights_path= str(current_dir / "mask_rcnn_neuron_0012.h5")
+    RECEIVER_DONE = str(current_dir / "RECEIVER_DONE.txt")
     #V1.2: 0.8 corr cutoff, 2 minimum ratio of h over w for spikes, cell_idxs incremented by 1, wheel data appended to mat save
     print("version:", version)
     import matplotlib

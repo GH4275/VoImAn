@@ -8,7 +8,6 @@
 call conda activate caiman 2>nul
 if not errorlevel 1 goto :run_script
 
-
 :: Step 2: If not in PATH, search common default installation locations
 set "FOUND_CONDA=0"
 for %%D in (

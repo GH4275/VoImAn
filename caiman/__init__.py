@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 import pkg_resources
 from caiman.base.movies import movie, load, load_movie_chain, _load_behavior, play_movie
 from caiman.base.timeseries import concatenate

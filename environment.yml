@@ -39,4 +39,8 @@ dependencies:
   - openpyxl
   - pip
   - pip:
+<<<<<<< HEAD
       - tkinterdnd2
+=======
+      - tkinterdnd2
+>>>>>>> d6bd62b52904ec42dc011cf255f4b359bac683c7
