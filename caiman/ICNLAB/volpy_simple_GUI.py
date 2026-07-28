@@ -33,15 +33,16 @@ def run_caiman_thread():
     if not folders:
         messagebox.showerror("Error", "No folders selected.")
         return
-
+    
     root_folder = os.path.dirname(folders[0])
-    log_file_path = os.path.join(root_folder, "processed_folders.txt")
 
-    # Write initial log
-    with open(log_file_path, "w") as log_file:
-        log_file.write("Processed Mouse ID Folders:\n")
-        for folder in folders:
-            log_file.write(f"{folder}\n")
+    # log_file_path = os.path.join(root_folder, "processed_folders.txt")
+
+    # # Write initial log
+    # with open(log_file_path, "w") as log_file:
+    #     log_file.write("Processed Mouse ID Folders:\n")
+    #     for folder in folders:
+    #         log_file.write(f"{folder}\n")
 
     # Get the selected analysis mode
     mode = analysis_mode.get()

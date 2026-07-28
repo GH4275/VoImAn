@@ -994,8 +994,13 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             print("Data type conversion complete.")
 
-            scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpy': vpy}, format='5', do_compression=True)
-            print("Saved VOLPY data to:", fname[:-4] + '_volpy.mat')
+            # Added "wheel and" to short-circuit if wheel is None
+            if wheel and 'stimulus' in wheel and wheel['stimulus'] is not None:
+                scipy.io.savemat(rootpath + unique_save_string + '-' + wheel['stimulus'] + '.mat', {'vpy': vpy}, format='5', do_compression=True)
+                print("Saved VOLPY data to:", fname[:-4] + unique_save_string + '-' + wheel['stimulus'] + '.mat')
+            else:
+                scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpy': vpy}, format='5', do_compression=True)
+                print("Saved VOLPY data to:", fname[:-4] + unique_save_string + '.mat')
 
 
             # vpy.estimates['params'] = opts
