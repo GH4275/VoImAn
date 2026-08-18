@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
+DEBUG VERSION of spikepursuit.py
 Created on Fri Apr 19 14:50:09 2019
 
 @author: @caichangjia adapt based on Matlab code provided by Kaspar Podgorski and Amrita Singh
+
+MODIFICATIONS FOR DEBUGGING:
+- Enhanced print statements at key checkpoints
+- Returns intermediate values for inspection (via debug dict)
+- Easier access to internal state during iterations
 """
 import logging
 import matplotlib.pyplot as plt
@@ -20,7 +26,7 @@ import caiman as cm
 from caiman.base.movies import movie
 
 # %%
-def volspike(pars):
+def volspike_debug(pars, return_debug_info=True):
     """ Function for finding spikes of single neuron with given ROI in
         voltage imaging. Use function denoise_spikes to find spikes
         from one dimensional signal, and use ridge regression to find the
@@ -114,6 +120,9 @@ def volspike(pars):
                         frequency for subthreshold extraction
 
 
+            return_debug_info: boolean
+                If True, returns extra debug info alongside output (default True)
+
         Returns:
             output: dictionary
                 cell_n: int
@@ -170,36 +179,38 @@ def volspike(pars):
                     
                 rawROI: dictionary
                     including the result after the first spike extraction
+
+            debug_info: dictionary (only if return_debug_info=True)
+                intermediate_t0: 1-d array - initial trace before spike detection
+                data_hp: 2-d array - high-pass filtered data
+                Ub: 2-d array - background principal components
+                t0_no_bg: 1-d array - trace after background removal
+                iteration_details: list of dict - one per iteration with intermediate values
     """
     # load parameters
     fnames = pars[0]
-    #file = pars[0]
     fr = pars[1]
     cell_n = pars[2]
     bw = pars[3]    
     weights_init = pars[4]    
-    # T = pars[5]
-    # data = pars[6]  
-    # bw = pars[7]
-    # ref = pars[8]
-    # notbw = pars[9]
-    # Yinds = pars[10]
-    # Xinds = pars[11]
-    # args = pars[12]
     args = pars[5]
     min_width = args.get('min_width', 0)
     max_width = args.get('max_width', 6)
     w_h_ratio = args.get('w_h_ratio', 4)
     polarity = args.get('polarity', 'auto')
 
-    # print("min_width:", min_width)
-    # print("max_width:", max_width)
-    # print("w_h_ratio:", w_h_ratio)
-
     window_length = int(fr * args['template_size']) # half window length for spike templates
     output = {}
     output['rawROI'] = {}
+    debug_info = {}
+    
+    print(f'\n{"="*60}')
     print(f'Now processing cell number {cell_n}')
+    print(f'Parameters: template_size={args["template_size"]}, context_size={args["context_size"]}, hp_freq_pb={args["hp_freq_pb"]}')
+    print(f'Spike detection: method={args["threshold_method"]}, min_spikes={args["min_spikes"]}, pnorm={args["pnorm"]}')
+    print(f'Iterations: n_iter={args["n_iter"]}, weight_update={args["weight_update"]}')
+    print(f'Width/height filtering: min_width={min_width}ms, max_width={max_width}ms, w_h_ratio={w_h_ratio}, polarity={polarity}')
+    print(f'{"="*60}')
     
     # load the movie in C-order memory mapping file
     Yr, dims, T = cm.load_memmap(fnames)
@@ -264,20 +275,38 @@ def volspike(pars):
     # compute the initial trace
     if weights_init is None:
         t0 = np.nanmean(data_hp[:, bw.ravel()], 1)
+        print(f"[CHECKPOINT 0] Initial trace computed from mean of ROI pixels")
     else: 
-        print('Reuse weights')
+        print('[CHECKPOINT 0] Reusing weights from previous iteration')
         t0 = np.matmul(data_hp, weights_init.ravel()) # reuse weights
+    
     t0 = t0 - np.mean(t0)
+    print(f"  t0 shape: {t0.shape}, min={np.min(t0):.3f}, max={np.max(t0):.3f}, mean={np.mean(t0):.3f}, std={np.std(t0):.3f}")
+    debug_info['intermediate_t0'] = t0.copy()
     
     # remove any variance in trace that can be predicted from the background principal components
     data_svd = data_hp[:, notbw.ravel()]
     if data_svd.shape[1] < args['nPC_bg'] + 1:
         raise Exception(f'Too few pixels ({data_svd.shape[1]}) for background extraction (at least {args["nPC_bg"]} needed);'
                         f'please decrease context_size and censor_size')
+    
+    print(f"[CHECKPOINT 1] Background PCA extraction")
+    print(f"  SVD background region shape: {data_svd.shape}, using nPC_bg={args['nPC_bg']}")
+    
     Ub, Sb, Vb = svds(data_svd, args['nPC_bg'])
-    alpha = args['nPC_bg'] * args['ridge_bg']    # square of F-norm of Ub is equal to number of principal components
+    alpha = args['nPC_bg'] * args['ridge_bg']
+    print(f"  Alpha (regularization): {alpha}, ridge_bg={args['ridge_bg']}")
+    print(f"  Ub shape: {Ub.shape}, Sb: {Sb}")
+    
     reg = Ridge(alpha=alpha, fit_intercept=False, solver='lsqr').fit(Ub, t0)
-    t0 = np.double(t0 - np.matmul(Ub, reg.coef_))
+    t0_bg_removed = np.double(t0 - np.matmul(Ub, reg.coef_))
+    print(f"  Background components removed from t0")
+    print(f"  t0 after BG removal: min={np.min(t0_bg_removed):.3f}, max={np.max(t0_bg_removed):.3f}, std={np.std(t0_bg_removed):.3f}")
+    
+    t0 = t0_bg_removed
+    debug_info['data_hp'] = data_hp.copy()
+    debug_info['Ub'] = Ub.copy()
+    debug_info['t0_no_bg'] = t0.copy()
     
     # spike detection for the initial trace
     ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t0,
@@ -287,7 +316,12 @@ def volspike(pars):
                                           min_spikes=args['min_spikes'], do_plot=False,
                                           min_width=min_width, max_width=max_width, w_h_ratio=w_h_ratio, polarity=polarity)
 
-    print("checkpoint 1: initial spike detection done with %d spikes detected" % (spikes.shape[0]))
+    print(f"[CHECKPOINT 2] Initial spike detection completed")
+    print(f"  Polarity: {polarity}")
+    print(f"  Spikes detected: {spikes.shape[0]}, threshold={thresh:.4f}, low_spikes={low_spikes}")
+    if spikes.shape[0] > 0:
+        print(f"  Spike times: min={np.min(spikes)}, max={np.max(spikes)}, mean={np.mean(spikes):.1f}")
+        print(f"  Template shape: {templates.shape}, min={np.min(templates):.4f}, max={np.max(templates):.4f}")
     if spikes.shape[0] != 0:
         #----- SPIKE DETECTION CASE -----
         output['rawROI']['t'] = t0.copy()
@@ -335,11 +369,16 @@ def volspike(pars):
                                 borderType=cv2.BORDER_REPLICATE), data_hp.shape)))
 
         # refine weights and estimate spike times for several iterations 
+        iteration_details = []
         for iteration in range(args['n_iter']):
+            print(f"\n[ITERATION {iteration}] Starting iteration...")
+            
             if iteration == args['n_iter'] - 1:
                 do_plot = args['do_plot']
             else:
                 do_plot = False
+            
+            iter_debug = {'iteration': iteration}
                 
             # update weights
             tr = np.single(t_rec.copy())
@@ -354,23 +393,32 @@ def volspike(pars):
                         if m == 0:
                             A[m] = np.maximum(A[m], 0)
                 weights = np.concatenate([[0], A[0]])
+                print(f"  Weight update: NMF")
             elif args['weight_update'] == 'ridge':
                 Ri = Ridge(alpha=lambdas[l_max], fit_intercept=True, solver='lsqr')
                 Ri.fit(recon, tr)
                 weights = Ri.coef_
                 weights[0] = Ri.intercept_
+                print(f"  Weight update: ridge (lambda={lambdas[l_max]:.2e})")
 
             # update the signal            
             t = np.matmul(recon, weights)
             t = t - np.mean(t)
+            iter_debug['t_after_recon'] = t.copy()
+            print(f"  Signal updated: min={np.min(t):.3f}, max={np.max(t):.3f}, std={np.std(t):.3f}")
 
             # ridge regression to remove background components
             b = Ridge(alpha=alpha, fit_intercept=False, solver='lsqr').fit(Ub, t).coef_
             t = t - np.matmul(Ub, b)
+            iter_debug['t_after_bg_removal'] = t.copy()
+            print(f"  Background removed: min={np.min(t):.3f}, max={np.max(t):.3f}, std={np.std(t):.3f}")
 
             # correct shrinkage
-            weights = weights * np.mean(t0[spikes]) / np.mean(t[spikes])
-            t = np.double(t * np.mean(t0[spikes]) / np.mean(t[spikes]))
+            shrinkage_factor = np.mean(t0[spikes]) / np.mean(t[spikes]) if len(spikes) > 0 else 1.0
+            weights = weights * shrinkage_factor
+            t = np.double(t * shrinkage_factor)
+            iter_debug['shrinkage_factor'] = shrinkage_factor
+            print(f"  Shrinkage correction factor: {shrinkage_factor:.4f}")
 
             # estimate spike times
             ts, spikes, t_rec, templates, low_spikes, thresh, polarity = denoise_spikes(t,
@@ -380,11 +428,21 @@ def volspike(pars):
                         min_width=min_width, max_width=max_width, w_h_ratio=w_h_ratio, polarity=polarity)
         
             num_spikes.append(spikes.shape[0])
-            print("iteration %d done with %d spikes detected" % (iteration + 1, spikes.shape[0]))
+            iter_debug['num_spikes'] = spikes.shape[0]
+            iter_debug['threshold'] = thresh
+            iter_debug['t_final'] = t.copy()
+            iter_debug['t_rec_final'] = t_rec.copy()
+            iter_debug['spikes_final'] = spikes.copy()
+            
+            iteration_details.append(iter_debug)
+            
+            print(f"  Spike detection: {spikes.shape[0]} spikes found (threshold={thresh:.4f})")
             if spikes.shape[0] == 0:
+                print(f"  No spikes detected - stopping iterations")
                 break
-
-        print('Final number of spikes detected: %d' % (spikes.shape[0]))
+        
+        debug_info['iteration_details'] = iteration_details
+        print(f'\n[CHECKPOINT 3] Final number of spikes detected: {spikes.shape[0]}')
         # compute SNR 
         if len(spikes)>0:
             t = t - np.median(t)
@@ -495,11 +553,11 @@ def volspike(pars):
         output['rawROI']['dFF'] = output['rawROI']['t'] / output['F0']
         output['polarity'] = polarity
 
-    return output
+    return output, debug_info if return_debug_info else output
 
 
 def denoise_spikes(data, window_length, fr=400,  hp_freq=1,  clip=100, threshold_method='adaptive_threshold', 
-                   min_spikes=10, pnorm=0.5, threshold=3,  do_plot=True, min_width=0, max_width=6, w_h_ratio=4):
+                   min_spikes=10, pnorm=0.5, threshold=3,  do_plot=True, min_width=0, max_width=6, w_h_ratio=4, polarity="auto"):
     """ Function for finding spikes and the temporal filter given one dimensional signals.
         Use function whitened_matched_filter to denoise spikes. Two thresholding methods can be 
         chosen, simple or 'adaptive thresholding'.

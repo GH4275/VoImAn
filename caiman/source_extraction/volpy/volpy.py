@@ -27,7 +27,7 @@ class VOLPY(object):
                  hp_freq=1, clip=100, threshold_method='adaptive_threshold', min_spikes=10, 
                  pnorm=0.5, threshold=3, sigmas=np.array([1, 1.5, 2]), n_iter=2, weight_update='ridge', 
                  do_plot=False, do_cross_val=False, sub_freq=20, 
-                 method='spikepursuit', superfactor=10, params=None, min_width = 0, max_width = 6, w_h_ratio = 4):
+                 method='spikepursuit', superfactor=10, params=None, min_width = 0, max_width = 6, w_h_ratio = 4, polarity = "auto"):
         
         """
         Args:
