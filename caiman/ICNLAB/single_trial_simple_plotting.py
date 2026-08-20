@@ -9,9 +9,9 @@ from scipy.signal import savgol_filter
 
 
 
-def plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames, mouseID, date, trialname, wheel=None):
+def plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames, mouseID, date, trialname, wheel=None, fr=640):
     cells = np.array(vpy['cell_idxs'])
-    time = np.arange(0,dur,1/640)
+    time = np.linspace(0, dur, num_frames)
 
     fig = plt.figure(figsize=(8.0, 11.0), facecolor='w',constrained_layout=True)
     spec = fig.add_gridspec(ncols=4, nrows=5, width_ratios=[1,1,1,1], height_ratios=[2, 5,1,1,1])
@@ -42,7 +42,7 @@ def plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frame
     if len(cells)>0:
         pos_cells = []
         neg_cells = []
-        b, a = butter(1, [1.5, 100], fs=640, btype='band')
+        b, a = butter(1, [1.5, 100], fs=fr, btype='band')
         k = 1
         for i in range(0, len(cells)):
             if ''.join(vpy['polarity'][cells[i]]) in 'negative':
@@ -91,7 +91,7 @@ def plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frame
 
         if wheel['data_time'] is not None:
             if wheel['data_time'].any() and wheel['data_pos'].any():
-                whl_time = np.arange(0,np.max(wheel['data_time']),1/640)
+                whl_time = np.arange(0,np.max(wheel['data_time']),1/fr)
                 wheel_interp = np.interp(whl_time, wheel['data_time'], wheel['data_pos'])
                 speed = np.zeros_like(wheel_interp)
                 for i in range(0,len(whl_time)-1):
@@ -182,4 +182,4 @@ def plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frame
     fig.savefig(rootpath + unique_save_string + '.pdf')
     #plt.close('all')
     
-    print("Saved VOLPY figure to:", fname[:-4] + '_volpy.pdf')
+    print("Saved VOLPY figure to:", os.path.splitext(fname)[0] + '_volpy.pdf')

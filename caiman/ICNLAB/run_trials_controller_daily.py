@@ -52,6 +52,6 @@ for i, folder in enumerate(folders):
 
     # Rest 1 hour between folders (not after last)
     if i < len(folders) - 1:
-        print("\n--- Resting for 1 hour before next folder ---\n", flush=True)
+        print("\n--- Resting for 1 second before next folder ---\n", flush=True)
         time.sleep(1)
 

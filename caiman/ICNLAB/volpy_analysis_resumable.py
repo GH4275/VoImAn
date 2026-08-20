@@ -63,11 +63,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("froot", help="Path to the input movie file")
     parser.add_argument("analysis_mode", help="new, old, or all")
+    parser.add_argument("frame_rate", type=float, default=640, help="Frame rate for analysis")
     args = parser.parse_args()
 
     froot = args.froot
     analysis_mode = args.analysis_mode
-    
+    global fr
+    fr = args.frame_rate
+
 
     if re.match(r"^FOV\d+_T\d+$", os.path.basename(froot)):
         p = Path(froot)  # normalize to Path
@@ -155,6 +158,8 @@ def main():
         log_csv_path = Path(froot).parent / "Analysis" / "MasterAnalysisLOG.csv"
         
         # Ensure the CSV exists with header if needed
+        if not log_csv_path.parent.exists():
+            log_csv_path.parent.mkdir(parents=True, exist_ok=True)
         if not log_csv_path.exists():
             with open(log_csv_path, mode='w', newline='') as f:
                 writer = csv.writer(f)
@@ -218,6 +223,7 @@ def analyzeFOV(folder_paths, analysis_mode):
     from pathlib import Path
     current_dir = Path(__file__).resolve().parent
     weights_path= str(current_dir / "mask_rcnn_neuron_0012.h5")
+    #RECEIVER_DONE = str(current_dir / "RECEIVER_DONE.txt")
     #V1.2: 0.8 corr cutoff, 2 minimum ratio of h over w for spikes, cell_idxs incremented by 1, wheel data appended to mat save
     print("version:", version)
     import matplotlib
@@ -343,7 +349,7 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             ##
             #fname = r'C:\Users\ICNLab\caiman_data\testdata\testdata\FOV1_T2RAM2\FOV1_T2.tsm'
-            fr = 640  ################################################################REMOVE LATER
+            #fr = 640  ################################################################REMOVE LATER
             print(fname, fr)
 
 
@@ -487,7 +493,7 @@ def analyzeFOV(folder_paths, analysis_mode):
             # 1. Parameters
             # ===============================
             HIGHPASS_THRESH = (5)
-            shape = m_rig.shape
+            (T, H, W) = m_rig.shape
             # ===============================
             # 2. Load memory-mapped video
             # ===============================
@@ -496,7 +502,7 @@ def analyzeFOV(folder_paths, analysis_mode):
                 mc.mmap_file[0],
                 dtype=np.float32,
                 mode="r",
-                shape=shape,
+                shape=(T, W, H), # Note: shape is (T, W, H) to match the original layout
                 order="C"
             ).swapaxes(1, 2)
 
@@ -519,7 +525,7 @@ def analyzeFOV(folder_paths, analysis_mode):
             # Parameters
             # ===============================
             TILE_SIZE = 4
-            H, W = 512, 512
+            #H, W = 512, 512
             FRAME_RATE = fr
             # (low, high), high ignored
             DISPLAY_CLIP = 99
@@ -621,17 +627,17 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             plt.imshow(summary_images[0], cmap='gray')
             plt.axis('off')
-            #plt.savefig(fname[:-4]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
+            #plt.savefig(os.path.splitext(fname)[0]+'_mean.tif', format='tif', bbox_inches='tight', pad_inches=0)
             plt.close('all') # Save the figure and close the plot   
 
             plt.imshow(summary_images[2], cmap='gray')
             plt.axis('off')
-            #plt.savefig(fname[:-4]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
+            #plt.savefig(os.path.splitext(fname)[0]+'_corr.tif', format='tif', bbox_inches='tight', pad_inches=0)
             plt.close('all') # Save the figure and close the plot   
             img = summary_images.transpose([1, 2, 0])
 
 
-            print(fname[:-4]+'_corr.tif')
+            print(os.path.splitext(fname)[0]+'_corr.tif')
             height, width = img.shape[:2]
             print(img.shape)
 
@@ -675,24 +681,247 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             ##
             print("Running Mask R-CNN inference...")
-            #download_model('mask_rcnn')
-            #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
-            r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
-            ROIs = r['masks'].transpose([2, 0, 1])
-            Coords = r['rois']
-            #cm.movie(ROIs).save(fname[:-4]+'newmrcnn_ROIs.hdf5')
 
-            fig, axs = plt.subplots(1, 2)
-            axs[0].imshow(summary_images[1])
-            axs[1].imshow(ROIs.sum(0))
-            axs[0].set_title('mean image')
-            axs[1].set_title('masks')
-            #plt.savefig(fname[:-6] + 'newmrcnn_ROIs.png', format='png', bbox_inches='tight', pad_inches=0)
-            plt.close('all')# Save the figure and close the plot   
+            orig_h, orig_w = img.shape[:2]
+            print(f"Loaded image with shape: {img.shape}")
+            if orig_h == 512 and orig_w == 512:
+                print("Image is exactly 512x512. Running OG single-inference method...")
+                #download_model('mask_rcnn')
+                #ROIs, r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=True)
+                r = utils.mrcnn_inference(img, size_range=[0, 40], weights_path=weights_path, display_result=False)
+                ROIs = r['masks'].transpose([2, 0, 1])
+                Coords = r['rois']
+                #cm.movie(ROIs).save(os.path.splitext(fname)[0]+'newmrcnn_ROIs.hdf5')
 
-            #save ROIs as npy array
-            #np.save(fname[:-4]+'newmrcnn_ROIs.npy', ROIs)
-            #print("Saved ROIs as npy array:", fname[:-4]+'newmrcnn_ROIs.npy')
+                fig, axs = plt.subplots(1, 2)
+                axs[0].imshow(summary_images[1])
+                axs[1].imshow(ROIs.sum(0))
+                axs[0].set_title('mean image')
+                axs[1].set_title('masks')
+                #plt.savefig(fname[:-6] + 'newmrcnn_ROIs.png', format='png', bbox_inches='tight', pad_inches=0)
+                plt.close('all')# Save the figure and close the plot   
+
+                #save ROIs as npy array
+                #np.save(os.path.splitext(fname)[0]+'newmrcnn_ROIs.npy', ROIs)
+                #print("Saved ROIs as npy array:", os.path.splitext(fname)[0]+'newmrcnn_ROIs.npy')
+            else:
+                print("Image is not 512x512. Running dynamic scaling and tiling method... ADJUST SCALE_FACTOR if needed.")
+
+
+                # ---------------------------------------------------------
+                # 0. Adjust Scale Factor
+                # ---------------------------------------------------------
+                SCALE_FACTOR = 0.7
+
+                orig_h, orig_w, orig_c = img.shape
+
+                # Scale down the image for inference
+                new_w = int(orig_w * SCALE_FACTOR)
+                new_h = int(orig_h * SCALE_FACTOR)
+                img_scaled = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+                print(f"Original shape: {img.shape} | Scaled shape for inference: {img_scaled.shape}")
+
+                # Use the scaled dimensions for all canvas calculations
+                h, w, c = img_scaled.shape
+
+                # ---------------------------------------------------------
+                # 1. Create the Batch of 512x512 Canvases (Using SCALED image)
+                # ---------------------------------------------------------
+                canvas_size = 512
+
+                chunk_width = canvas_size - 20  
+                overlap = 40                    
+                stride = chunk_width - overlap  
+
+                y_start = 10                    
+                y_spacing = h + 10              # Spacing depends on scaled image height
+
+                canvases = []
+                current_canvas = np.zeros((canvas_size, canvas_size, c), dtype=img_scaled.dtype)
+                current_y = y_start
+                canvas_id = 0
+
+                # ---------------------------------------------------------
+                # 2. Slice the SCALED image and stack it onto the canvases
+                # ---------------------------------------------------------
+                print(f"Tiling scaled image onto 512x512 canvases with {overlap}px overlap...")
+                chunks = []
+
+                for x in range(0, w, stride):
+                    if current_y + h > canvas_size:
+                        canvases.append(current_canvas)
+                        current_canvas = np.zeros((canvas_size, canvas_size, c), dtype=img_scaled.dtype)
+                        current_y = y_start
+                        canvas_id += 1
+
+                    c_w = min(chunk_width, w - x)
+                    
+                    # Slice a chunk of the SCALED image
+                    chunk = img_scaled[:, x : x + c_w, :]
+                    
+                    current_canvas[current_y : current_y + h, 10 : 10 + c_w, :] = chunk
+                    
+                    core_x_start = 10 + (overlap // 2 if x > 0 else 0)
+                    core_x_end = 10 + c_w - (overlap // 2 if x + stride < w else 0)
+                    
+                    chunks.append({
+                        'canvas_id': canvas_id,
+                        'scaled_x_start': x,
+                        'canvas_y_start': current_y,
+                        'canvas_y_end': current_y + h,
+                        'canvas_x_start': 10,
+                        'canvas_x_end': 10 + c_w,
+                        'core_x_start': core_x_start,
+                        'core_x_end': core_x_end,
+                        'chunk_width': c_w
+                    })
+                    
+                    current_y += y_spacing
+
+                canvases.append(current_canvas)
+                print(f"Generated {len(canvases)} canvases for inference.")
+
+                # ---------------------------------------------------------
+                # 3 & 4. Run Inference and Upscale Detections
+                # ---------------------------------------------------------
+                valid_orig_masks = []  
+                valid_orig_rois = []   
+                valid_scores = []
+                valid_class_ids = []
+
+                for cid, canvas in enumerate(canvases):
+                    print(f"Running Mask R-CNN inference on canvas {cid + 1}/{len(canvases)}...")
+                    r = utils.mrcnn_inference(canvas, size_range=[0, 40], weights_path=weights_path, display_result=False)
+
+                    if r['masks'].shape[-1] > 0:
+                        n_detections = r['masks'].shape[-1]
+                        
+                        for i in range(n_detections):
+                            y1, x1, y2, x2 = r['rois'][i]
+                            cy = (y1 + y2) / 2.0
+                            cx = (x1 + x2) / 2.0
+                            
+                            is_valid = False
+                            assigned_chunk = None
+                            for chunk in chunks:
+                                if chunk['canvas_id'] == cid and \
+                                (chunk['canvas_y_start'] <= cy <= chunk['canvas_y_end']) and \
+                                (chunk['core_x_start'] <= cx <= chunk['core_x_end']):
+                                    is_valid = True
+                                    assigned_chunk = chunk
+                                    break
+                                    
+                            if is_valid:
+                                valid_scores.append(r['scores'][i])
+                                valid_class_ids.append(r['class_ids'][i])
+                                
+                                # --- 1. Transform ROIs to SCALED coordinates ---
+                                scaled_y1 = y1 - assigned_chunk['canvas_y_start']
+                                scaled_y2 = y2 - assigned_chunk['canvas_y_start']
+                                scaled_x1 = x1 - assigned_chunk['canvas_x_start'] + assigned_chunk['scaled_x_start']
+                                scaled_x2 = x2 - assigned_chunk['canvas_x_start'] + assigned_chunk['scaled_x_start']
+                                
+                                scaled_y1 = max(0, min(h, scaled_y1))
+                                scaled_y2 = max(0, min(h, scaled_y2))
+                                scaled_x1 = max(0, min(w, scaled_x1))
+                                scaled_x2 = max(0, min(w, scaled_x2))
+
+                                # --- 2. UPSCALE ROIs to TRUE ORIGINAL coordinates ---
+                                orig_y1 = max(0, min(orig_h, int(np.round(scaled_y1 / SCALE_FACTOR))))
+                                orig_y2 = max(0, min(orig_h, int(np.round(scaled_y2 / SCALE_FACTOR))))
+                                orig_x1 = max(0, min(orig_w, int(np.round(scaled_x1 / SCALE_FACTOR))))
+                                orig_x2 = max(0, min(orig_w, int(np.round(scaled_x2 / SCALE_FACTOR))))
+                                
+                                valid_orig_rois.append([orig_y1, orig_x1, orig_y2, orig_x2])
+                                
+                                # --- 3. Transform Masks to SCALED coordinates ---
+                                mask_chunk = r['masks'][
+                                    assigned_chunk['canvas_y_start'] : assigned_chunk['canvas_y_end'],
+                                    assigned_chunk['canvas_x_start'] : assigned_chunk['canvas_x_end'],
+                                    i
+                                ]
+                                
+                                scaled_mask = np.zeros((h, w), dtype=bool)
+                                scaled_mask[:, assigned_chunk['scaled_x_start'] : assigned_chunk['scaled_x_start'] + assigned_chunk['chunk_width']] = mask_chunk
+                                
+                                # --- 4. UPSCALE Masks to TRUE ORIGINAL coordinates ---
+                                # Use INTER_NEAREST to preserve boolean mask integrity (no blurred decimal pixels)
+                                orig_mask = cv2.resize(scaled_mask.astype(np.uint8), (orig_w, orig_h), interpolation=cv2.INTER_NEAREST).astype(bool)
+                                valid_orig_masks.append(orig_mask)
+
+                # --- Compile the Final Reconstructed Dictionary ---
+                r_reconstructed = {
+                    'rois': np.array(valid_orig_rois, dtype=np.int32) if len(valid_orig_rois) > 0 else np.empty((0, 4), dtype=np.int32),
+                    'class_ids': np.array(valid_class_ids, dtype=np.int32),
+                    'scores': np.array(valid_scores, dtype=np.float32),
+                    'masks': np.stack(valid_orig_masks, axis=-1) if len(valid_orig_masks) > 0 else np.empty((orig_h, orig_w, 0), dtype=bool)
+                }
+
+                print("\n--- Reconstructed Results ---")
+                print("r_reconstructed['rois'] shape:", r_reconstructed['rois'].shape)
+                print("r_reconstructed['masks'] shape:", r_reconstructed['masks'].shape)
+
+                # ---------------------------------------------------------
+                # 5. Summarize and Plot the Tiled Canvas Results
+                # ---------------------------------------------------------
+                n_valid = r_reconstructed['masks'].shape[-1]
+                if n_valid > 0:
+                    print(f"\nSuccess! Found {n_valid} valid objects.")
+
+                fig, axs = plt.subplots(1, 2, figsize=(14, 7))
+
+                axs[0].imshow(canvases[0])
+                axs[0].set_title(f'Canvas 1 of {len(canvases)} (Scaled Image)')
+                axs[0].axis('off')
+
+                # Show TRUE ORIGINAL image with UPSCALED reconstructed masks
+                axs[1].imshow(img, aspect="equal")  
+                if n_valid > 0:
+                    masks_sum = r_reconstructed['masks'].sum(axis=-1)
+                    axs[1].imshow(masks_sum, cmap='jet', alpha=0.5, aspect="equal")  
+                axs[1].set_title(f'Masks Cast Back to Original Size (n={n_valid})')
+                axs[1].axis('off')
+
+                plt.tight_layout()
+                plt.show()
+
+                # ---------------------------------------------------------
+                # 6. Reconstruct and Plot Original Image with Contours
+                # ---------------------------------------------------------
+                print("Generating reconstructed original image with contours...")
+                fig2, ax2 = plt.subplots(figsize=(18, 4))
+
+                ax2.imshow(img, aspect="equal") 
+                ax2.set_title(f'Original Image ({orig_h}x{orig_w}) with Upscaled Contours')
+                ax2.axis('off')
+
+                if n_valid > 0:
+                    for i in range(n_valid):
+                        mask = r_reconstructed['masks'][:, :, i]
+                        if np.any(mask):
+                            ax2.contour(mask, levels=[0.5], colors='red', linewidths=1)
+
+                plt.tight_layout()
+                plt.show()
+
+                # ---------------------------------------------------------
+                # 7. Final Saving
+                # ---------------------------------------------------------
+                r = r_reconstructed
+                ROIs = r['masks'].transpose([2, 0, 1])
+                Coords = r['rois']
+
+                fig, axs = plt.subplots(2, 1, figsize=(10, 15))
+                axs[0].imshow(summary_images[1])
+                axs[1].imshow(ROIs.sum(0))
+                axs[0].set_title('mean image')
+                axs[1].set_title('masks')
+
+                # np.save(fname[:-6]+'newmrcnn_ROIs.npy', ROIs)
+                # print("Saved ROIs as npy array:", fname[:-6]+'newmrcnn_ROIs.npy')
+
+
 
             ###NEW SECTION FOR ROI COORDINATE EXTRACTION
             cell_centers = [((y1 + y2) // 2, (x1 + x2) // 2) for (y1, x1, y2, x2) in Coords]
@@ -703,11 +932,11 @@ def analyzeFOV(folder_paths, analysis_mode):
             # ax.imshow(img, cmap='gray') # Display the image
             # ax.scatter(cell_centers[:, 1], cell_centers[:, 0], color='red') # Display the cell centers
             # ax.set_title('Cell centers')    # Set the title of the plot
-            #plt.savefig(fname[:-4] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
+            #plt.savefig(os.path.splitext(fname)[0] + '_cell_centers.png', format='png', bbox_inches='tight', pad_inches=0)
             plt.close('all') # Save the figure and close the plot     
 
             # Save to a file
-            #save_path = fname[:-4] + '_cell_centers.npy'
+            #save_path = os.path.splitext(fname)[0] + '_cell_centers.npy'
             #np.save(save_path, cell_centers)
 
             #print(f"Cell centers saved to {save_path}")
@@ -802,7 +1031,7 @@ def analyzeFOV(folder_paths, analysis_mode):
             ##
             vpy.estimates['ROIs'] = ROIs
             vpy.estimates['Coords'] = Coords
-            # save_name = fname[:-4]+'_volpy'
+            # save_name = os.path.splitext(fname)[0]+'_volpy'
             # np.save(save_name, vpy.estimates)
 
             cm.stop_server(dview=dview)
@@ -833,7 +1062,7 @@ def analyzeFOV(folder_paths, analysis_mode):
 
             # try:
             num_frames = np.max(vpy['dFF'].shape)
-            dur = num_frames/640
+            dur = num_frames/fr
             vpy['snr_over_thresh'] = []
 
             vpy['raster'] = np.zeros_like(vpy['dFF'])
@@ -845,7 +1074,7 @@ def analyzeFOV(folder_paths, analysis_mode):
 
                 for i in range(vpy['dFF'].shape[0]-1):
                     vpy['raster'][i, vpy['spikes'][i]] = 1
-                    vpy['firing_rate'][i] = savgol_filter(np.convolve(vpy['raster'][i]*640,np.ones(32)/32,mode='same'),64,1)
+                    vpy['firing_rate'][i] = savgol_filter(np.convolve(vpy['raster'][i]*fr,np.ones(32)/32,mode='same'),64,1)
 
                 for i in range(len(vpy['ROIs'])):
                     vpy['snr_over_thresh'].append(abs(vpy['snr'][i]) >= snr_thresh_display) #################################################################################################################
@@ -889,14 +1118,14 @@ def analyzeFOV(folder_paths, analysis_mode):
                 wheel = None
 
             #make figure
-            plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames, mouseID, date, trialname, wheel)
+            plotdata(vpy, dur, img, ROIs, fname, rootpath, unique_save_string, num_frames, mouseID, date, trialname, wheel, fr)
 
             print("Saving VOLPY data to MAT file...")
             vpy['ROIs'] = ROIs
             #vpy['rect'] = r['rois']
             vpy['img'] = img
             del vpy['rawROI']
-            #scipy.io.savemat(fname[:-4] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
+            #scipy.io.savemat(os.path.splitext(fname)[0] + '_volpy.mat', {'vpy': vpy}, format='5', do_compression=True)
 
             print("Converting data types for fast saving...")
 
@@ -917,21 +1146,26 @@ def analyzeFOV(folder_paths, analysis_mode):
             vpy['wheel'] = wheel #append wheel data to saved mat file
 
             # Load .tbn file to extract downsampled wheel data
-            tbn_fname = fname[:-4] + ".tbn"
-            with open(tbn_fname, "rb") as f:
-                header = np.fromfile(f, dtype=np.uint8, count=4)   # MATLAB default
-                data = np.fromfile(f, dtype=np.float64)
-            if data.size % 4 != 0:
-                raise ValueError(
-                    f"File has {data.size} float64 values, not divisible by 4"
-                )
-            nrows = data.size // 4
-            data = data.reshape((nrows, 4), order="F")
-            # MATLAB: downsample(data(:,4),2)
-            downsampled_channel_4 = data[:, 3][::2]
+            tbn_fname = os.path.splitext(fname)[0] + ".tbn"
+            
+            if os.path.exists(tbn_fname):
+                with open(tbn_fname, "rb") as f:
+                    header = np.fromfile(f, dtype=np.uint8, count=4)   # MATLAB default
+                    data = np.fromfile(f, dtype=np.float64)
+                if data.size % 4 != 0:
+                    raise ValueError(
+                        f"File has {data.size} float64 values, not divisible by 4"
+                    )
+                nrows = data.size // 4
+                data = data.reshape((nrows, 4), order="F")
+                # MATLAB: downsample(data(:,4),2)
+                downsampled_channel_4 = data[:, 3][::2]
 
-            vpy['bnc4'] = downsampled_channel_4
-            print("Extracted downsampled channel 4 from .tbn file and added to vpy['bnc4'].")
+                vpy['bnc4'] = downsampled_channel_4
+                print("Extracted downsampled channel 4 from .tbn file and added to vpy['bnc4'].")
+            else:
+                print(f"WARNING: No .tbn file found at {tbn_fname}. Skipping 'bnc4' extraction.")
+                # vpy['bnc4'] = []  # Uncomment if your MATLAB code strictly requires this key to exist
 
             # Process float conversions
             for key in keys_to_convert_float:
@@ -997,10 +1231,10 @@ def analyzeFOV(folder_paths, analysis_mode):
             # Added "wheel and" to short-circuit if wheel is None
             if wheel and 'stimulus' in wheel and wheel['stimulus'] is not None:
                 scipy.io.savemat(rootpath + unique_save_string + '-' + wheel['stimulus'] + '.mat', {'vpy': vpy}, format='5', do_compression=True)
-                print("Saved VOLPY data to:", fname[:-4] + unique_save_string + '-' + wheel['stimulus'] + '.mat')
+                print("Saved VOLPY data to:", os.path.splitext(fname)[0] + unique_save_string + '-' + wheel['stimulus'] + '.mat')
             else:
                 scipy.io.savemat(rootpath + unique_save_string + '.mat', {'vpy': vpy}, format='5', do_compression=True)
-                print("Saved VOLPY data to:", fname[:-4] + unique_save_string + '.mat')
+                print("Saved VOLPY data to:", os.path.splitext(fname)[0] + unique_save_string + '.mat')
 
 
             # vpy.estimates['params'] = opts

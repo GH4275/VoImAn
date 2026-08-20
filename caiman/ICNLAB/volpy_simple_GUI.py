@@ -29,20 +29,19 @@ def drop(event):
             folder_listbox.insert(tk.END, path)
 
 def run_caiman_thread():
+    # 1. Check for folders
     folders = folder_listbox.get(0, tk.END)
     if not folders:
         messagebox.showerror("Error", "No folders selected.")
         return
     
+    # 2. Check for Frame Rate
+    fr = fr_entry.get().strip()
+    if not fr:
+        messagebox.showwarning("Warning", "Please provide a frame rate before running.")
+        return
+    
     root_folder = os.path.dirname(folders[0])
-
-    # log_file_path = os.path.join(root_folder, "processed_folders.txt")
-
-    # # Write initial log
-    # with open(log_file_path, "w") as log_file:
-    #     log_file.write("Processed Mouse ID Folders:\n")
-    #     for folder in folders:
-    #         log_file.write(f"{folder}\n")
 
     # Get the selected analysis mode
     mode = analysis_mode.get()
@@ -54,12 +53,12 @@ def run_caiman_thread():
         messagebox.showinfo("Info", "No valid folders to process.")
         return
 
+    # Pass mode as arg 2, fr as arg 3, and then the folders
     cmd = (
         'cmd.exe /k python "run_trials_controller.py" '
-        f'{mode} ' +
+        f'{mode} {fr} ' +
         ' '.join(f'"{f}"' for f in valid_folders)
     )
-
 
     subprocess.Popen(cmd)
 
@@ -69,12 +68,10 @@ def run_caiman():
 # ---------- GUI ----------
 root = TkinterDnD.Tk()
 root.title("VoImAn Pipeline Runner")
-root.geometry("700x450")
+root.geometry("700x500") # Slightly increased height to fit the new textbox
 analysis_mode = tk.StringVar(value="new")  # default
 
-
 tk.Label(root, text="Drag and drop Mouse ID or Trial folders below:").pack(pady=(10,0))
-
 
 # Listbox for folders
 folder_listbox = tk.Listbox(root, selectmode=tk.EXTENDED, width=80, height=15)
@@ -101,6 +98,12 @@ tk.Radiobutton(mode_frame, text="Old", value="old",
 tk.Radiobutton(mode_frame, text="All", value="all",
                variable=analysis_mode).pack(side="left", padx=10)
 
+# Frame Rate Input
+fr_frame = tk.Frame(root)
+fr_frame.pack(pady=5)
+tk.Label(fr_frame, text="Frame Rate (Hz):").pack(side="left")
+fr_entry = tk.Entry(fr_frame, width=10)
+fr_entry.pack(side="left", padx=5)
 
 # Run button
 tk.Button(root, text="Process Data for Mouse ID", bg="#4CAF50", fg="white",

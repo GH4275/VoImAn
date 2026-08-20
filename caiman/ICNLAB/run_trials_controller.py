@@ -34,14 +34,16 @@ current_dir = Path(__file__).resolve().parent
 SCRIPT_PATH = str(current_dir / "volpy_analysis_resumable.py")
 
 mode = sys.argv[1]
-folders = sys.argv[2:]
+fr = sys.argv[2] 
+folders = sys.argv[3:]
+
 
 for i, folder in enumerate(folders):
     print(f"\n=== Processing {folder} ===", flush=True)
 
     try:
         subprocess.run(
-            ["python", SCRIPT_PATH, folder, mode],
+            ["python", SCRIPT_PATH, folder, mode, fr],  # Pass the frame rate as an argument
             check=True
         )
 
@@ -49,7 +51,7 @@ for i, folder in enumerate(folders):
         print(f"CaImAn failed on {folder}", flush=True)
         continue
 
-    # Rest 1 hour between folders (not after last)
+    # Rest 1 second between folders (not after last)
     if i < len(folders) - 1:
         print("\n--- Resting for 1 second before next folder ---\n", flush=True)
         time.sleep(1)

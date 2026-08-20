@@ -183,3 +183,15 @@ class Dcimg:
 		msec = frameparam.timestamp.microsec
 		return (sec*1000000) + msec
 
+	def getCameraStamp(self, frame):
+		""" get the true hardware clock camerastamp of the specified frame """
+		if (self._bOpened == False):
+			return None
+
+		frameparam = dcimg.DCIMG_FRAME()
+		frameparam.iFrame = frame
+		retval = dcimg.lockframe(self._hdcimg, frameparam)
+		if retval != dcimg.DCIMG_ERR.SUCCESS:
+			return None
+
+		return frameparam.camerastamp
